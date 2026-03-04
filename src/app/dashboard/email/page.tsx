@@ -287,7 +287,7 @@ export default function EmailPage() {
             <div>
               <h3 className="text-sm font-semibold text-slate-300 mb-3">お客様への提案アクション</h3>
               <div className="space-y-2">
-                {['資料請求', '無料デモ', 'メール返信', '電話相談', '訪啍'].map((cta) => (
+                {['資料請求', '無料デモ', 'メール返信', '電話相談', '訪問'].map((cta) => (
                   <label key={cta} className="flex items-center gap-3 cursor-pointer">
                     <input
                       type="radio"
