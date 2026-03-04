@@ -432,7 +432,18 @@ ${newsContext}
 
 ${urlContext ? `【検索結果URL】\n${urlContext}` : ''}
 
-以下の情報を抽出して、JSON形式で出力してください。ニュースは最低5件以上含めてください。URLが判明している場合は必ず含めてください。
+以下の情報を抽出して、JSON形式で出力してください。
+
+■ URL出力に関する重要ルール：
+1. homepage_url: 企業の公式HP（コーポレートサイト）のURLを必ず出力してください。検索結果URLから企業HPを特定するか、「https://www.{企業ドメイン}.co.jp」等の一般的なURLパターンから推測してください。
+2. business_url: 企業の事業・サービス・製品紹介ページのURLを必ず出力してください。検索結果URLから「/services」「/products」「/business」「/solutions」等のページを探してください。見つからない場合はhomepage_urlと同じURLを入れてください。
+3. ニュース(news)の各項目にはurlを必ず含めてください。検索結果URLからニュース記事のURLを特定してください。
+
+■ ニュース出力に関する重要ルール：
+- newsは【必ず5件以上】出力してください。これは絶対条件です。
+- 各ニュースにはtitle, summary, url, dateの4項目を含めてください。
+- 検索結果からニュースを5件以上抽出できない場合は、企業の業界動向、プレスリリース、IR情報、採用情報なども含めて5件以上にしてください。
+- 各ニュースのurlには実際の記事URLを入れてください。URLが不明な場合はhomepage_urlのnewsページやpress等のURLを推測して入れてください。
 
 ■ 重要な注意事項：「pains」について
 「pains」には【${companyName}自体が直面していると推測される経営課題・業務課題】を記載してください。
@@ -451,14 +462,16 @@ ${companyName}という企業組織が、日々の事業運営において抱え
   "industry": "業界名",
   "stage": "事業段階（スタートアップ/成長期/成熟期など）",
   "employees": "従業員数（数値のみ、不明な場合はnull）",
-  "homepage_url": "企業の公式ホームページURL（不明な場合は空文字）",
-  "business_url": "企業の事業・サービス・製品紹介ページのURL（例: /services, /products, /business 等のページ。検索結果URLから該当するものを選択。不明な場合は企業HPのURLを入れる）",
-  "news": [{"title": "ニュースタイトル", "summary": "要約（1文）", "url": "ニュース記事のURL（あれば）", "date": "日付（あれば）"}],
+  "homepage_url": "企業の公式ホームページURL（必須。不明でも推測して出力）",
+  "business_url": "企業の事業・サービス・製品紹介ページURL（必須。不明な場合はhomepage_urlと同じ）",
+  "news": [{"title": "ニュースタイトル", "summary": "要約（1文）", "url": "ニュース記事のURL（必須）", "date": "日付（あれば）"}],
   "pains": ["${companyName}自体が直面する経営課題1", "${companyName}自体が直面する業務課題2", "課題3", "課題4", "課題5"],
   "hypothesis": "このサービスが${companyName}の上記課題解決に役立つと思われる仮説（1-2文）"
 }
 
-重要: newsは最低5件以上出力してください。スクレイプ内容やニュース記事から5件以上の関連ニュースを抽出できない場合は、企業の業界動向や一般的なニュースも含めて5件以上にしてください。`;
+【再確認】
+- homepage_url, business_url は必ず有効なURLを出力（空文字不可）
+- newsは必ず5件以上（各項目にurl必須）`;
 
       const responseText = await callAI(prompt);
 
