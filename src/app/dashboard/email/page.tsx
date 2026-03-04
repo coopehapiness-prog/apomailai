@@ -3,7 +3,7 @@
 import { useState, FormEvent } from 'react'
 import { useEmailGeneration } from '@/lib/hooks/useEmailGeneration'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
-import { ResearchReport } from './components/ResearchReport'
+import ResearchReport from './components/ResearchReport'
 import { EmailOutput } from './components/EmailOutput'
 import toast from 'react-hot-toast'
 
