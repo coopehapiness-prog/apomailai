@@ -40,28 +40,44 @@ export class ResearchService {
       const hasSearchApi = process.env.GOOGLE_SEARCH_API_KEY && process.env.GOOGLE_SEARCH_CX;
 
       if (!hasSearchApi) {
-        // No search API - return minimal research template (skip Gemini call to save time)
-        console.log(`No Google Search API configured, using minimal template for ${companyName}`);
-        const minimalResearch: CompanyResearch = {
-          company_name: companyName,
-          overview: `${companyName}の企業情報`,
-          news: [],
-          pains: ['業務効率化', 'コスト削減', '生産性向上'],
-          scraped_at: new Date().toISOString(),
-        };
-
-        // Cache minimal result (wrapped in try-catch since Supabase builder may not support .catch)
+        // No search API - use Gemini to generate research based on its training data
+        console.log(`No Google Search API configured, using Gemini knowledge for ${companyName}`);
         try {
-          await supabase.from('research_cache').insert({
-            company_name: companyName,
-            user_id: userId,
-            research_data: minimalResearch,
-          });
-        } catch (_) {
-          // Don't fail on cache error
-        }
+          const research = await geminiService.analyzeResearch(
+            companyName,
+            `${companyName}について、あなたの知識に基づいて分析してください。`,
+            [],
+            []
+          );
 
-        return minimalResearch;
+          // Cache result
+          try {
+            await supabase.from('research_cache').insert({
+              company_name: companyName,
+              user_id: userId,
+              research_data: research,
+            });
+          } catch (_) {
+            // Don't fail on cache error
+          }
+
+          return research;
+        } catch (geminiError) {
+          console.error('Gemini research failed, using minimal template:', geminiError);
+          // Fallback to minimal template if Gemini also fails
+          const minimalResearch: CompanyResearch = {
+            company_name: companyName,
+            overview: `${companyName}の企業情報`,
+            news: [],
+            pains: [
+              `${companyName}の事業拡大に伴う組織課題`,
+              '競合他社との差別化',
+              '社内DX・業務プロセス改善',
+            ],
+            scraped_at: new Date().toISOString(),
+          };
+          return minimalResearch;
+        }
       }
 
       // Perform Google Custom Search
