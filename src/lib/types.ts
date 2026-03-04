@@ -61,6 +61,8 @@ export interface CompanyResearch {
   industry?: string
   stage?: string
   employees?: number | string
+  homepage_url?: string
+  business_url?: string
   news: Array<{ title: string; summary?: string; url?: string; date?: string }>
   pains: string[]
   hypothesis?: string
@@ -72,6 +74,8 @@ export interface CompanyResearch {
   latestNews?: Array<{ id: string; title: string; url?: string; date?: string; summary?: string }>
   painPoints?: string[]
   opportunities?: string[]
+  overviewUrl?: string
+  businessUrl?: string
 }
 
 export interface EmailGenRequest {
