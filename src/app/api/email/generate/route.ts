@@ -20,6 +20,8 @@ const GenerateEmailSchema = z.object({
   freeText: z.string().optional(),
 });
 
+export const maxDuration = 60; // Vercel Pro: up to 60s, Hobby: 10s
+
 export async function POST(request: NextRequest) {
   try {
     const userId = await authenticateRequest(request);
@@ -50,26 +52,26 @@ export async function POST(request: NextRequest) {
       userId
     );
 
-    // Generate emails
-    const patterns = await geminiService.generateEmails({
-      companyName: validated.companyName,
-      research,
-      settings,
-      persona: validated.persona,
-      sourceType: validated.sourceType,
-      ctaType: validated.ctaType,
-      newsIdx: validated.newsIdx,
-      freeText: validated.freeText,
-    });
+    // Generate emails and sub outputs IN PARALLEL to avoid timeout
+    const [patterns, subOutputs] = await Promise.all([
+      geminiService.generateEmails({
+        companyName: validated.companyName,
+        research,
+        settings,
+        persona: validated.persona,
+        sourceType: validated.sourceType,
+        ctaType: validated.ctaType,
+        newsIdx: validated.newsIdx,
+        freeText: validated.freeText,
+      }),
+      geminiService.generateSubOutputs(
+        validated.companyName,
+        research,
+        settings
+      ),
+    ]);
 
-    // Generate sub outputs
-    const subOutputs = await geminiService.generateSubOutputs(
-      validated.companyName,
-      research,
-      settings
-    );
-
-    // Save to generated_emails table
+    // Save to generated_emails table (non-blocking error handling)
     const { data: generatedEmail, error: saveError } = await supabase
       .from('generated_emails')
       .insert({
@@ -91,9 +93,20 @@ export async function POST(request: NextRequest) {
 
     if (saveError) {
       console.error('Error saving generated emails:', saveError);
+      // Still return patterns even if save fails
       return NextResponse.json(
-        { error: 'Failed to save generated emails' },
-        { status: 500 }
+        {
+          message: 'Emails generated (save warning)',
+          generatedEmail: {
+            id: null,
+            companyName: validated.companyName,
+            patterns,
+            research,
+            subOutputs,
+            createdAt: new Date().toISOString(),
+          },
+        },
+        { status: 200 }
       );
     }
 
