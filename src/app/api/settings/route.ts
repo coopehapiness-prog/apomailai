@@ -17,7 +17,7 @@ const UpdateSettingsSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = authenticateRequest(request);
+    const userId = await authenticateRequest(request);
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const userId = authenticateRequest(request);
+    const userId = await authenticateRequest(request);
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
