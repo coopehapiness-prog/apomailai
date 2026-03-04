@@ -1,214 +1,146 @@
 import {
-  EmailGenerationRequest,
-  GeneratedEmail,
-  CompanyResearch,
   CustomSettings,
+  CompanyResearch,
+  EmailGenRequest,
+  GeneratedEmail,
   Lead,
-  KPIData,
-  SuccessFactors,
-  KnowledgeBase,
-} from '@/lib/types';
+  AnalyticsKPI,
+} from './types'
 
-class ApiClient {
-  private baseUrl = '/api';
-  private token: string | null = null;
+// Use relative paths for API routes since they are co-located in Next.js
+const API_URL = ''
 
-  constructor() {
-    // Load token from localStorage if available
-    if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem('authToken');
-    }
+class APIClient {
+  private accessToken?: string
+
+  setAccessToken(token: string) {
+    this.accessToken = token
   }
 
-  /**
-   * Set auth token for subsequent requests
-   */
-  setToken(token: string): void {
-    this.token = token;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('authToken', token);
-    }
-  }
-
-  /**
-   * Get current auth token
-   */
-  getToken(): string | null {
-    return this.token;
-  }
-
-  /**
-   * Clear auth token
-   */
-  clearToken(): void {
-    this.token = null;
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('authToken');
-    }
-  }
-
-  /**
-   * Make a request to the API
-   */
   private async request<T>(
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
-    path: string,
+    method: string,
+    endpoint: string,
     body?: unknown
   ): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(url, {
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`
+    }
+
+    const response = await fetch(`${API_URL}${endpoint}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    });
+    })
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || `API Error: ${response.status}`);
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.message || `API error: ${response.status}`)
     }
 
-    return response.json();
+    return response.json()
   }
 
-  /**
-   * Login with email and password
-   */
-  async login(email: string, password: string): Promise<{ token: string }> {
-    const response = await this.request<{ token: string }>('POST', '/auth/login', {
-      email,
-      password,
-    });
-    if (response.token) {
-      this.setToken(response.token);
-    }
-    return response;
+  async register(email: string, password: string, name?: string, company?: string) {
+    const res = await this.request<{ token: string; user: { id: string; email: string; name?: string } }>(
+      'POST', '/api/auth/register', { email, password, name, company }
+    )
+    this.accessToken = res.token
+    return res
   }
 
-  /**
-   * Register a new account
-   */
-  async register(email: string, password: string): Promise<{ token: string }> {
-    const response = await this.request<{ token: string }>('POST', '/auth/register', {
-      email,
-      password,
-    });
-    if (response.token) {
-      this.setToken(response.token);
-    }
-    return response;
+  async login(email: string, password: string) {
+    const res = await this.request<{ token: string; user: { id: string; email: string; name?: string } }>(
+      'POST', '/api/auth/login', { email, password }
+    )
+    this.accessToken = res.token
+    return res
   }
 
-  /**
-   * Generate email based on request
-   */
-  async generateEmail(req: EmailGenerationRequest): Promise<GeneratedEmail> {
-    return this.request<GeneratedEmail>('POST', '/email/generate', req);
+  async verifyToken(token: string) {
+    return this.request<{ userId: string }>('POST', '/api/auth/verify', { token })
   }
 
-  /**
-   * Research a company
-   */
+  async generateEmail(req: EmailGenRequest): Promise<GeneratedEmail> {
+    console.log('[API_CLIENT] generateEmail called with:', req.companyName)
+    const res = await this.request<{ generatedEmail: GeneratedEmail }>('POST', '/api/email/generate', req)
+    console.log('[API_CLIENT] generateEmail result:', {
+      hasGeneratedEmail: !!res?.generatedEmail,
+      patternsLength: res?.generatedEmail?.patterns?.length,
+    })
+    return res.generatedEmail
+  }
+
   async researchCompany(companyName: string): Promise<CompanyResearch> {
-    return this.request<CompanyResearch>('POST', '/research/company', {
+    const res = await this.request<{ research: CompanyResearch }>('POST', '/api/research/company', {
       companyName,
-    });
+    })
+    return res.research
   }
 
-  /**
-   * Get user settings
-   */
   async getSettings(): Promise<CustomSettings> {
-    return this.request<CustomSettings>('GET', '/settings');
+    const res = await this.request<{ settings: CustomSettings }>('GET', '/api/settings')
+    return res.settings
   }
 
-  /**
-   * Update user settings
-   */
   async updateSettings(settings: Partial<CustomSettings>): Promise<CustomSettings> {
-    return this.request<CustomSettings>('PATCH', '/settings', settings);
+    const res = await this.request<{ settings: CustomSettings }>('PATCH', '/api/settings', settings)
+    return res.settings
   }
 
-  /**
-   * Get all leads
-   */
-  async getLeads(): Promise<Lead[]> {
-    return this.request<Lead[]>('GET', '/leads');
+  async getLeads(filters?: {
+    status?: string
+    dateFrom?: string
+    dateTo?: string
+    sort?: string
+  }): Promise<{ leads: Lead[]; pagination: { limit: number; offset: number; total: number } }> {
+    const params = new URLSearchParams()
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.append(key, value)
+      })
+    }
+    const queryString = params.toString()
+    const endpoint = queryString ? `/api/leads?${queryString}` : '/api/leads'
+    return this.request('GET', endpoint)
   }
 
-  /**
-   * Create a new lead
-   */
-  async createLead(lead: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>): Promise<Lead> {
-    return this.request<Lead>('POST', '/leads', lead);
+  async updateLead(id: string, data: Partial<Lead>): Promise<Lead> {
+    return this.request<Lead>('PATCH', `/api/leads/${id}`, data)
   }
 
-  /**
-   * Update a lead
-   */
-  async updateLead(
-    id: string,
-    lead: Partial<Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>>
-  ): Promise<Lead> {
-    return this.request<Lead>('PATCH', `/leads/${id}`, lead);
+  async createLead(data: Partial<Lead>): Promise<Lead> {
+    const res = await this.request<{ lead: Lead }>('POST', '/api/leads', data)
+    return res.lead
   }
 
-  /**
-   * Delete a lead
-   */
   async deleteLead(id: string): Promise<void> {
-    await this.request<void>('DELETE', `/leads/${id}`);
+    await this.request<{ message: string }>('DELETE', `/api/leads/${id}`)
   }
 
-  /**
-   * Get KPI analytics
-   */
-  async getKPI(params?: Record<string, string | number>): Promise<KPIData> {
-    const queryString = params
-      ? '?' + new URLSearchParams(params as Record<string, string>).toString()
-      : '';
-    return this.request<KPIData>('GET', `/analytics/kpi${queryString}`);
+  async getAnalytics(
+    period?: string,
+    member?: string
+  ): Promise<AnalyticsKPI> {
+    const params = new URLSearchParams()
+    if (period) params.append('period', period)
+    if (member) params.append('member', member)
+    const queryString = params.toString()
+    const endpoint = queryString
+      ? `/api/analytics/kpi?${queryString}`
+      : '/api/analytics/kpi'
+    const res = await this.request<{ kpi: AnalyticsKPI }>('GET', endpoint)
+    return res.kpi
   }
 
-  /**
-   * Get success factors analytics
-   */
-  async getSuccessFactors(): Promise<SuccessFactors> {
-    return this.request<SuccessFactors>('GET', '/analytics/success-factors');
-  }
-
-  /**
-   * Upload knowledge base file
-   */
-  async uploadKnowledge(formData: FormData): Promise<KnowledgeBase> {
-    const url = `${this.baseUrl}/settings/knowledge-base`;
-    const headers: HeadersInit = {};
-
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || `API Error: ${response.status}`);
-    }
-
-    return response.json();
+  async getSuccessFactors() {
+    return this.request<{ success_factors: Array<{ factor: string; count: number; percentage: number; category: string }> }>(
+      'GET', '/api/analytics/success-factors'
+    )
   }
 }
 
-// Export singleton instance
-export const apiClient = new ApiClient();
+export const apiClient = new APIClient()
