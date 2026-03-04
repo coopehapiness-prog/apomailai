@@ -3,7 +3,7 @@
 import { useState, FormEvent } from 'react'
 import { useEmailGeneration } from '@/lib/hooks/useEmailGeneration'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
-import ResearchReport from './components/ResearchReport'
+import { ResearchReport } from './components/ResearchReport'
 import { EmailOutput } from './components/EmailOutput'
 import toast from 'react-hot-toast'
 
@@ -225,7 +225,7 @@ export default function EmailPage() {
           onClick={() => setShowCustomize(!showCustomize)}
           className="w-full flex items-center justify-between font-semibold text-white hover:text-blue-400 transition-colors"
         >
-          <span>カスタマイズ</span>
+          <span>カスタマイズしてメールを再生成</span>
           <span className="text-slate-400">{showCustomize ? '−' : '+'}</span>
         </button>
 
@@ -285,7 +285,7 @@ export default function EmailPage() {
 
             {/* CTA Selection */}
             <div>
-              <h3 className="text-sm font-semibold text-slate-300 mb-3">CTA（行動喚起）</h3>
+              <h3 className="text-sm font-semibold text-slate-300 mb-3">お客様への提案アクション</h3>
               <div className="space-y-2">
                 {['資料請求', '無料デモ', 'メール返信', '電話相談', '訪啍'].map((cta) => (
                   <label key={cta} className="flex items-center gap-3 cursor-pointer">
