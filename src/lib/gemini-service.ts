@@ -412,13 +412,41 @@ ${freeText || 'なし'}
     companyName: string,
     scrapedContent: string,
     newsArticles: string[],
-    searchUrls?: Array<{ title: string; url: string }>
+    searchUrls?: Array<{ title: string; url: string }>,
+    categorizedUrls?: {
+      newsUrls: Array<{ title: string; url: string; snippet: string }>;
+      serviceUrls: Array<{ title: string; url: string; snippet: string }>;
+      companyUrls: Array<{ title: string; url: string; snippet: string }>;
+    }
   ): Promise<CompanyResearch> {
     try {
       const newsContext = newsArticles.slice(0, 10).join('\n');
-      const urlContext = searchUrls
-        ? searchUrls.map((u) => `${u.title}: ${u.url}`).join('\n')
-        : '';
+
+      // Build categorized URL sections for the prompt
+      let urlSection = '';
+      if (categorizedUrls) {
+        const newsUrlList = categorizedUrls.newsUrls
+          .map((u, i) => `  N${i + 1}. ${u.title}\n      URL: ${u.url}\n      概要: ${u.snippet}`)
+          .join('\n');
+        const serviceUrlList = categorizedUrls.serviceUrls
+          .map((u, i) => `  S${i + 1}. ${u.title}\n      URL: ${u.url}\n      概要: ${u.snippet}`)
+          .join('\n');
+        const companyUrlList = categorizedUrls.companyUrls
+          .map((u, i) => `  C${i + 1}. ${u.title}\n      URL: ${u.url}\n      概要: ${u.snippet}`)
+          .join('\n');
+
+        urlSection = `
+【ニュース関連の検索結果（実際のURL）】
+${newsUrlList || '  （検索結果なし）'}
+
+【サービス・製品関連の検索結果（実際のURL）】
+${serviceUrlList || '  （検索結果なし）'}
+
+【企業情報関連の検索結果（実際のURL）】
+${companyUrlList || '  （検索結果なし）'}`;
+      } else if (searchUrls && searchUrls.length > 0) {
+        urlSection = `\n【検索結果URL】\n${searchUrls.map((u) => `${u.title}: ${u.url}`).join('\n')}`;
+      }
 
       const prompt = `あなたはインサイドセールス（IS）のリサーチアナリストです。以下の企業について営業アプローチのための調査分析を行ってください。
 
@@ -427,57 +455,79 @@ ${freeText || 'なし'}
 【スクレイプ内容】
 ${scrapedContent.substring(0, 5000)}
 
-【ニュース記事】
+【ニュース記事スニペット】
 ${newsContext}
+${urlSection}
 
-${urlContext ? `【検索結果URL】\n${urlContext}` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+■ URL出力の絶対ルール（最重要・厳守）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-以下の情報を抽出して、JSON形式で出力してください。
+【絶対禁止】上記の検索結果に含まれていないURLを自分で作成・推測・捏造することは厳禁です。
+存在しないURLを出力するとリンク切れになり、ユーザーに多大な迷惑がかかります。
 
-■ URL出力に関する重要ルール：
-1. homepage_url: 企業の公式HP（コーポレートサイト）のURLを必ず出力してください。検索結果URLから企業HPを特定するか、「https://www.{企業ドメイン}.co.jp」等の一般的なURLパターンから推測してください。
-2. business_url: 企業の事業・サービス・製品紹介ページのURLを必ず出力してください。検索結果URLから「/services」「/products」「/business」「/solutions」等のページを探してください。見つからない場合はhomepage_urlと同じURLを入れてください。
-3. ニュース(news)の各項目にはurlを必ず含めてください。検索結果URLからニュース記事のURLを特定してください。
+1. homepage_url:
+   → 【企業情報関連の検索結果】の中から、${companyName}の公式コーポレートサイト（トップページ）のURLを選んでください。
+   → 検索結果に公式サイトがない場合のみ、「https://www.{推測ドメイン}.co.jp」の形式で出力可。
 
-■ ニュース出力に関する重要ルール：
-- newsは【必ず5件以上】出力してください。これは絶対条件です。
-- 各ニュースにはtitle, summary, url, dateの4項目を含めてください。
-- 検索結果からニュースを5件以上抽出できない場合は、企業の業界動向、プレスリリース、IR情報、採用情報なども含めて5件以上にしてください。
-- 各ニュースのurlには実際の記事URLを入れてください。URLが不明な場合はhomepage_urlのnewsページやpress等のURLを推測して入れてください。
+2. business_url:
+   → 【サービス・製品関連の検索結果】の中から、${companyName}のサービス紹介・製品紹介・ソリューション紹介ページのURLを選んでください。
+   → homepage_urlとは【別の】URLにしてください（同じURLは不可）。
+   → サービスや製品のページが見つからない場合は、検索結果の中で最もサービス内容に近いページのURLを選んでください。
 
-■ 重要な注意事項：「pains」について
-「pains」には【${companyName}自体が直面していると推測される経営課題・業務課題】を記載してください。
-${companyName}が提供するサービスの顧客の課題ではありません。
-${companyName}という企業組織が、日々の事業運営において抱えているであろう課題です。
+3. news の各項目の url:
+   → 【ニュース関連の検索結果】のURLをそのままコピーして使ってください。
+   → 検索結果のURLと1文字でも異なるURLを出力しないでください。
+   → ニュースが5件に満たない場合は、【サービス・製品関連】や【企業情報関連】の検索結果URLも活用してください。
 
-例えば:
-- 「人材採用・定着の課題」「DX推進の遅れ」「レガシーシステムの刷新」「営業効率の改善」「海外展開の障壁」など
-- その企業の業界・規模・事業段階に応じた具体的な課題を推測してください
-- 一般的すぎる課題（「業務効率化」など）は避け、その企業の状況に合った具体的な課題を挙げてください
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+■ ニュース出力ルール
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- newsは【必ず5件以上】出力してください（絶対条件）。
+- 各ニュースには title, summary, url, date の4項目を含めてください。
+- urlには必ず上記検索結果に実在するURLを使用してください。
+- 検索結果からニュースを5件以上確保できない場合は、企業情報やサービス情報の検索結果URLも活用し、それらをニュース風にまとめてください。
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+■ 「pains」（課題仮説）に関する絶対ルール
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+「pains」には【${companyName}という企業組織そのものが抱える経営課題・業務課題】を記載してください。
+
+【よくある間違い - 絶対にやらないでください】
+${companyName}がBtoB企業やSaaS企業の場合、${companyName}の「顧客が抱える課題」を書いてしまうケースが多いです。
+例えば${companyName}がHR Techの会社なら、「採用に悩む企業の課題」ではなく「${companyName}自身の組織運営上の課題」を書いてください。
+
+【正しい「pains」の例】
+- ${companyName}自身の人材確保・エンジニア採用の課題
+- ${companyName}の営業組織の効率化・リード獲得の課題
+- ${companyName}の事業拡大に伴うオペレーション負荷
+- ${companyName}の競合との差別化戦略の課題
+- ${companyName}の新規市場開拓・海外展開の課題
+- ${companyName}のレガシーシステムの刷新・技術的負債
+- ${companyName}の組織拡大に伴うマネジメント課題
+
+要するに、「${companyName}の経営者や社員が日々頭を悩ませていること」です。
+
+JSON形式で以下を出力してください：
 {
   "company_name": "企業名",
   "overview": "企業の概要説明（2-3文）",
-  "business": "主要な事業内容の詳細説明（3-5文）",
+  "business": "主要な事業内容の詳細説明（3-5文。${companyName}がどんなサービス・製品を提供しているか）",
   "industry": "業界名",
   "stage": "事業段階（スタートアップ/成長期/成熟期など）",
   "employees": "従業員数（数値のみ、不明な場合はnull）",
-  "homepage_url": "企業の公式ホームページURL（必須。不明でも推測して出力）",
-  "business_url": "企業の事業・サービス・製品紹介ページURL（必須。不明な場合はhomepage_urlと同じ）",
-  "news": [{"title": "ニュースタイトル", "summary": "要約（1文）", "url": "ニュース記事のURL（必須）", "date": "日付（あれば）"}],
-  "pains": ["${companyName}自体が直面する経営課題1", "${companyName}自体が直面する業務課題2", "課題3", "課題4", "課題5"],
-  "hypothesis": "このサービスが${companyName}の上記課題解決に役立つと思われる仮説（1-2文）"
-}
-
-【再確認】
-- homepage_url, business_url は必ず有効なURLを出力（空文字不可）
-- newsは必ず5件以上（各項目にurl必須）`;
+  "homepage_url": "企業の公式ホームページURL（検索結果から選択）",
+  "business_url": "サービス・製品紹介ページURL（homepage_urlとは別のURL。検索結果から選択）",
+  "news": [{"title": "ニュースタイトル", "summary": "要約（1文）", "url": "検索結果から取得した実在URL", "date": "日付（あれば）"}],
+  "pains": ["${companyName}自体の経営課題1", "${companyName}自体の業務課題2", "課題3", "課題4", "課題5"],
+  "hypothesis": "当社サービスが${companyName}の上記課題解決にどう役立つかの仮説（1-2文）"
+}`;
 
       const responseText = await callAI(prompt);
-
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
+
         return {
           company_name: parsed.company_name || companyName,
           overview: parsed.overview,
@@ -515,6 +565,7 @@ ${companyName}という企業組織が、日々の事業運営において抱え
       };
     }
   }
+
 
   private parseEmailPatterns(
     responseText: string,
