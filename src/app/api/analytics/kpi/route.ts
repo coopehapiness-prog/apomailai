@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authenticateRequest } from '@/lib/auth-utils';
 import { supabase } from '@/lib/supabase';
-import { AnalyticsKPI } from 'A/lib/types';
+import { AnalyticsKPI } from '@/lib/types';
 
 const QuerySchema = z.object({
   period: z
