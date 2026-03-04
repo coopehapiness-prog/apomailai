@@ -10,6 +10,12 @@ interface GoogleSearchResult {
   }>;
 }
 
+interface SearchResultWithUrl {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
 export class ResearchService {
   async researchCompany(companyName: string, userId: string): Promise<CompanyResearch> {
     try {
@@ -31,7 +37,8 @@ export class ResearchService {
       }
 
       // Perform Google Custom Search
-      const searchResults = await this.googleSearch(companyName);
+      const searchResultsWithUrls = await this.googleSearchWithUrls(companyName);
+      const searchResults = searchResultsWithUrls.map((r) => r.snippet);
 
       // Scrape content from results
       const scrapedContent = await this.scrapeSearchResults(searchResults);
@@ -39,11 +46,12 @@ export class ResearchService {
       // Parse news from search results
       const newsArticles = this.parseNewsArticles(searchResults);
 
-      // Analyze with Gemini
+      // Analyze with Gemini (pass URLs for richer data)
       const research = await geminiService.analyzeResearch(
         companyName,
         scrapedContent,
-        newsArticles
+        newsArticles,
+        searchResultsWithUrls.map((r) => ({ title: r.title, url: r.url }))
       );
 
       // Cache the result
@@ -66,6 +74,55 @@ export class ResearchService {
         scraped_at: new Date().toISOString(),
       };
     }
+  }
+
+  private async googleSearchWithUrls(companyName: string): Promise<SearchResultWithUrl[]> {
+    const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
+    const cx = process.env.GOOGLE_SEARCH_CX;
+
+    if (!apiKey || !cx) {
+      console.warn('Google Search API credentials not configured, returning empty results');
+      return [];
+    }
+
+    const queries = [
+      `${companyName} 最新ニュース`,
+      `${companyName} 資金調達 採用`,
+      `${companyName} 会社概要 事業内容`,
+    ];
+
+    const results: SearchResultWithUrl[] = [];
+
+    for (const query of queries) {
+      try {
+        const url = new URL('https://www.googleapis.com/customsearch/v1');
+        url.searchParams.append('q', query);
+        url.searchParams.append('key', apiKey);
+        url.searchParams.append('cx', cx);
+        url.searchParams.append('num', '5');
+
+        const response = await fetch(url.toString());
+        if (!response.ok) {
+          console.warn(`Google Search failed for query: ${query}`);
+          continue;
+        }
+
+        const data = (await response.json()) as GoogleSearchResult;
+        if (data.items) {
+          for (const item of data.items.slice(0, 5)) {
+            results.push({
+              title: item.title || '',
+              url: item.link || '',
+              snippet: item.snippet || '',
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Error searching for ${query}:`, error);
+      }
+    }
+
+    return results;
   }
 
   private async googleSearch(companyName: string): Promise<string[]> {
