@@ -50,12 +50,16 @@ export class ResearchService {
           scraped_at: new Date().toISOString(),
         };
 
-        // Cache minimal result
-        await supabase.from('research_cache').insert({
-          company_name: companyName,
-          user_id: userId,
-          research_data: minimalResearch,
-        }).catch(() => {}); // Don't fail on cache error
+        // Cache minimal result (wrapped in try-catch since Supabase builder may not support .catch)
+        try {
+          await supabase.from('research_cache').insert({
+            company_name: companyName,
+            user_id: userId,
+            research_data: minimalResearch,
+          });
+        } catch (_) {
+          // Don't fail on cache error
+        }
 
         return minimalResearch;
       }
