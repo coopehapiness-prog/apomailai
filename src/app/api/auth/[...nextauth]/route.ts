@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { apiClient } from '@/lib/api-client'
+import { supabase } from '@/lib/supabase'
+import { verifyPassword, generateToken } from '@/lib/auth-utils'
 
 const handler = NextAuth({
   providers: [
@@ -9,7 +10,6 @@ const handler = NextAuth({
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
-        isRegister: { label: 'Is Register', type: 'text' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -17,35 +17,30 @@ const handler = NextAuth({
         }
 
         try {
-          const endpoint = credentials.isRegister === 'true'
-            ? '/auth/register'
-            : '/auth/login'
+          // Find user by email
+          const { data: user, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', credentials.email)
+            .single();
 
-          const response = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL}${endpoint}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: credentials.email,
-                password: credentials.password,
-              }),
-            }
-          )
-
-          if (!response.ok) {
-            const error = await response.json().catch(() => ({}))
-            throw new Error(
-              error.message || 'ログインに失敗しました'
-            )
+          if (userError || !user) {
+            throw new Error('メールアドレスまたはパスワードが正しくありません')
           }
 
-          const data = await response.json()
+          // Verify password
+          const isValid = await verifyPassword(credentials.password, user.password_hash);
+          if (!isValid) {
+            throw new Error('メールアドレスまたはパスワードが正しくありません')
+          }
+
+          // Generate access token
+          const accessToken = generateToken(user.id);
 
           return {
-            id: data.userId || data.id,
-            email: credentials.email,
-            accessToken: data.accessToken || data.token,
+            id: user.id,
+            email: user.email,
+            accessToken: accessToken,
           }
         } catch (error) {
           if (error instanceof Error) {
@@ -70,9 +65,6 @@ const handler = NextAuth({
     async session({ session, token }) {
       session.user!.id = token.userId as string
       session.accessToken = token.accessToken as string
-      if (session.user) {
-        apiClient.setAccessToken(token.accessToken as string)
-      }
       return session
     },
   },
