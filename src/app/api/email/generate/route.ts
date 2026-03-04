@@ -99,12 +99,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        id: generatedEmail.id,
-        companyName: generatedEmail.company_name,
-        patterns: generatedEmail.patterns,
-        research: generatedEmail.company_research,
-        subOutputs: generatedEmail.sub_outputs,
-        createdAt: generatedEmail.created_at,
+        message: 'Emails generated successfully',
+        generatedEmail: {
+          id: generatedEmail.id,
+          companyName: generatedEmail.company_name,
+          patterns: generatedEmail.patterns,
+          research: generatedEmail.company_research,
+          subOutputs: generatedEmail.sub_outputs,
+          createdAt: generatedEmail.created_at,
+        },
       },
       { status: 200 }
     );
