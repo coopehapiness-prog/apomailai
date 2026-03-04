@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authenticateRequest } from '@/lib/auth-utils';
 import { supabase } from '@/lib/supabase';
 import { geminiService } from '@/lib/gemini-service';
-import { researchService } from 'A/lib/research-service';
+import { researchService } from '@/lib/research-service';
 
 const GenerateEmailSchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
