@@ -34,18 +34,30 @@ export function useEmailGeneration() {
       }))
 
       try {
+        console.log('[HOOK] Calling apiClient.generateEmail...')
         const result = await apiClient.generateEmail(request)
-        setState((prev) => ({
-          ...prev,
-          company: request.companyName,
-          source: request.source,
-          history: request.history || '',
-          patterns: result.patterns,
-          research: result.research,
-          loading: false,
-        }))
+        console.log('[HOOK] API result received:', {
+          hasPatterns: !!result?.patterns,
+          patternsIsArray: Array.isArray(result?.patterns),
+          patternsLength: result?.patterns?.length,
+          hasResearch: !!result?.research,
+        })
+        setState((prev) => {
+          const newState = {
+            ...prev,
+            company: request.companyName,
+            source: (request as any).source || '',
+            history: (request as any).history || '',
+            patterns: result.patterns || [],
+            research: result.research || null,
+            loading: false,
+          }
+          console.log('[HOOK] setState called, new patterns length:', newState.patterns.length)
+          return newState
+        })
         return result
       } catch (err) {
+        console.error('[HOOK] Error in generate:', err)
         const message = err instanceof Error ? err.message : 'メール生成に失敗しました'
         setState((prev) => ({
           ...prev,
