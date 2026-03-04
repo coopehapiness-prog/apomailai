@@ -1,74 +1,214 @@
 import {
-  CustomSettings,
-  CompanyResearch,
-  EmailGenRequest,
+  EmailGenerationRequest,
   GeneratedEmail,
+  CompanyResearch,
+  CustomSettings,
   Lead,
-  AnalyticsKPI,
-} from './types'
+  KPIData,
+  SuccessFactors,
+  KnowledgeBase,
+} from '@/lib/types';
 
-// Use relative paths for API routes since they are co-located in Next.js
-const API_URL = ''
+class ApiClient {
+  private baseUrl = '/api';
+  private token: string | null = null;
 
-class APIClient {
-  private accessToken?: string
-
-  setAccessToken(token: string) {
-    this.accessToken = token
+  constructor() {
+    // Load token from localStorage if available
+    if (typeof window !== 'undefined') {
+      this.token = localStorage.getItem('authToken');
+    }
   }
 
+  /**
+   * Set auth token for subsequent requests
+   */
+  setToken(token: string): void {
+    this.token = token;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('authToken', token);
+    }
+  }
+
+  /**
+   * Get current auth token
+   */
+  getToken(): string | null {
+    return this.token;
+  }
+
+  /**
+   * Clear auth token
+   */
+  clearToken(): void {
+    this.token = null;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('authToken');
+    }
+  }
+
+  /**
+   * Make a request to the API
+   */
   private async request<T>(
-    method: string,
-    endpoint: string,
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    path: string,
     body?: unknown
   ): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    if (this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`
-    }
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetch(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    })
+    });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}))
-      throw new Error(error.message || `API error: ${response.status}`)
+      const error = await response.json();
+      throw new Error(error.message || `API Error: ${response.status}`);
     }
 
-    return response.json()
+    return response.json();
   }
 
-  async register(email: string, password: string, name?: string, company?: string) {
-    const res = await this.request<{ token: string; user: { id: string; email: string; name?: string } }>(
-      'POST', '/api/auth/register', { email, password, name, company }
-    )
-    this.accessToken = res.token
-    return res
+  /**
+   * Login with email and password
+   */
+  async login(email: string, password: string): Promise<{ token: string }> {
+    const response = await this.request<{ token: string }>('POST', '/auth/login', {
+      email,
+      password,
+    });
+    if (response.token) {
+      this.setToken(response.token);
+    }
+    return response;
   }
 
-  async login(email: string, password: string) {
-    const res = await this.request<{ token: string; user: { id: string; email: string; name?: string } }>(
-      'POST', '/api/auth/login', { email, password }
-    )
-    this.accessToken = res.token
-    return res
+  /**
+   * Register a new account
+   */
+  async register(email: string, password: string): Promise<{ token: string }> {
+    const response = await this.request<{ token: string }>('POST', '/auth/register', {
+      email,
+      password,
+    });
+    if (response.token) {
+      this.setToken(response.token);
+    }
+    return response;
   }
 
-  async verifyToken(token: string) {
-    return this.request<{ userId: string }>('POST', '/api/auth/verify', { token })
+  /**
+   * Generate email based on request
+   */
+  async generateEmail(req: EmailGenerationRequest): Promise<GeneratedEmail> {
+    return this.request<GeneratedEmail>('POST', '/email/generate', req);
   }
 
-  async generateEmail(req: EmailGenRequest): Promise<GeneratedEmail> {
-    const res = await this.request<{ generatedEmail: GeneratedEmail }>('POST', '/api/email/generate', req)
-    return res.generatedEmail
-  }
-
+  /**
+   * Research a company
+   */
   async researchCompany(companyName: string): Promise<CompanyResearch> {
-    const res = await this.request<{ research: CompanyResearch }>('POST', '/api/research/company', {
-      companyName,(€€€ô¤(€€€É•ÑÕÉ¸É•Ì¹É•Í•…É (€ô((€…Íå¹Œ•ÑM•ÑÑ¥¹Ì ¤èAÉ½µ¥Í”ñÕÍÑ½µM•ÑÑ¥¹Ìøì(€€€½¹ÍĞÉ•Ì€ô…İ…¥ĞÑ¡¥Ì¹É•ÅÕ•ÍĞñìÍ•ÑÑ¥¹ÌèÕÍÑ½µM•ÑÑ¥¹Ìôø Pœ°€œ½…Á¤½Í•ÑÑ¥¹Ìœ¤(€€€É•ÑÕÉ¸É•Ì¹Í•ÑÑ¥¹Ì(€ô((€…Íå¹ŒÕÁ‘…Ñ•M•ÑÑ¥¹Ì¡Í•ÑÑ¥¹ÌèA…ÉÑ¥…°ñÕÍÑ½µM•ÑÑ¥¹Ìø¤èAÉ½µ¥Í”ñÕÍÑ½µM•ÑÑ¥¹Ìøì(€€€½¹ÍĞÉ•Ì€ô…İ…¥ĞÑ¡¥Ì¹É•ÅÕ•ÍĞñìÍ•ÑÑ¥¹ÌèÕÍÑ½µM•ÑÑ¥¹Ìôø AQ œ°€œ½…Á¤½Í•ÑÑ¥¹Ìœ°Í•ÑÑ¥¹Ì¤(€€€É•ÑÕÉ¸É•Ì¹Í•ÑÑ¥¹ÍÈ(€ô((€…Íå¹Œ•Ñ1•…‘Ì¡™¥±Ñ•ÉÌüèì(€€€ÍÑ…ÑÕÌüèÍÑÉ¥¹œ(€€€‘…Ñ•É½´üèÍÑÉ¥¹œ(€€€‘…Ñ•Q¼üèÍÑÉ¥¹œ(€€€Í½ÉĞüèÍÑÉ¥¹œ(€ô¤èAÉ½µ¥Í”ñì±•…‘Ìè1•…‘mtìÁ…¥¹…Ñ¥½¸èì±¥µ¥Ğè¹Õµ‰•Èì½™™Í•Ğè¹Õµ‰•ÈìÑ½Ñ…°è¹Õµ‰•Èôôøì(€€€½¹ÍĞÁ…É…µÌ€ô¹•ÜUI1M•…É¡A…É…µÌ ¤(€€€¥˜€¡™¥±Ñ•ÉÌ¤ì(€€€€€=‰©•Ğ¹•¹ÑÉ¥•Ì¡™¥±Ñ•ÉÌ¤¹™½É…  ¡m­•ä°Ù…±Õ•t¤€ôøì(€€€€€€€¥˜€¡Ù…±Õ”¤Á…É…µÌ¹…ÁÁ•¹¡­•ä°Ù…±Õ”¤(€€€€€ô¤(€€€ô(€€€½¹ÍĞÅÕ•ÉåMÑÉ¥¹œ€ôÁ…É…µÌ¹Ñ½MÑÉ¥¹œ ¤(€€€½¹ÍĞ•¹‘Á½¥¹Ğ€ôÅÕ•ÉåMÑÉ¥¹œ€ü€½…Á¤½±•…‘Ìü‘íÅÕ•ÉåMÑÉ¥¹õ€€è€œ½…Á¤½±•…‘Ìœ(€€€É•ÑÕÉ¸Ñ¡¥Ì¹É•ÅÕ•ÍĞ Pœ°•¹‘Á½¥¹Ğ¤(€ô((€…Íå¹ŒÕÁ‘…Ñ•1•…¡¥èÍÑÉ¥¹œ°‘…Ñ„èA…ÉÑ¥…°ñ1•…ø¤èAÉ½µ¥Í”ñ1•…øì(€€€É•ÑÕÉ¸Ñ¡¥Ì¹É•ÅÕ•ÍĞñ1•…ø AQ œ°€½…Á¤½±•…‘Ì¼‘í¥‘õ€°‘…Ñ„¤(€ô((€…Íå¹ŒÉ•…Ñ•1•…¡‘…Ñ„èA…ÉÑ¥…°ñ1•…ø¤èAÉ½µ¥Í”ñ1•…øì(€€€½¹ÍĞÉ•Ì€ô…İ…¥ĞÑ¡¥Ì¹É•ÅÕ•ÍĞñì±•…è1•…ôø A=MPœ°€œ½…Á¤½±•…‘Ìœ°‘…Ñ„¤(€€€É•ÑÕÉ¸É•Ì¹±•…(€ô((€…Íå¹Œ‘•±•Ñ•1•…¡¥èÍÑÉ¥¹œ¤èAÉ½µ¥Í”ñÙ½¥øì(€€€…İ…¥ĞÑ¡¥Ì¹É•ÅÕ•ÍĞñìµ•ÍÍ…”èÍÑÉ¥¹œôø 1Qœ°€½…Á¤½±•…‘Ì¼‘í¥‘õ€¤(€ô((€…Íå¹Œ•Ñ¹…±åÑ¥Ì (€€€Á•É¥½üèÍÑÉ¥¹œ°(€€€µ•µ‰•ÈüèÍÑÉ¥¹œ(€€¤èAÉ½µ¥Í”ñ¹…±åÑ¥Í-A$øì(€€€½¹ÍĞÁ…É…µÌ€ô¹•ÜUI1M•…É¡A…É…µÌ ¤(€€€¥˜€¡Á•É¥½¤Á…É…µÌ¹…ÁÁ•¹ Á•É¥½œ°Á•É¥½¤(€€€¥˜€¡µ•µ‰•È¤Á…É…µÌ¹…ÁÁ•¹ µ•µ‰•Èœ°µ•µ‰•È¤(€€€½¹ÍĞÅÕ•ÉåMÑÉ¥¹œ€ôÁ…É…µÌ¹Ñ½MÑÉ¥¹œ ¤(€€€½¹ÍĞ•¹‘Á½¥¹Ğ€ôÅÕ•ÉåMÑÉ¥¹œ(€€€€€€ü€½…Á¤½…¹…±åÑ¥Ì½­Á¤ü‘íÅÕ•ÉåMÑÉ¥¹õ€(€€€€€€è€œ½…Á¤½…¹…±åÑ¥Ì½­Á¤œ(€€€½¹ÍĞÉ•Ì€ô…İ…¥ĞÑ¡¥Ì¹É•ÅÕ•ÍĞñì­Á¤è¹…±åÑ¥Í-A$ôø Pœ°•¹‘Á½¥¹Ğ¤(€€€É•ÑÕÉ¸É•Ì¹­Á¤(€ô((€…Íå¹Œ•ÑMÕ•ÍÍ…Ñ½ÉÌ ¤ì(€€€É•ÑÕÉ¸Ñ¡¥Ì¹É•ÅÕ•ÍĞñìÍÕ•ÍÍ}™…Ñ½ÉÌèÉÉ…äñì™…Ñ½ÈèÍÑÉ¥¹œì½Õ¹Ğè¹Õµ‰•ÈìÁ•É•¹Ñ…”è¹Õµ‰•Èì…Ñ•½ÉäèÍÑÉ¥¹œôøôø (€€€€€€Pœ°€œ½…Á¤½…¹…±åÑ¥Ì½ÍÕ•ÍÌµ™…Ñ½ÉÌœ(€€€€¤(€ô)ô()•áÁ½ÉĞ½¹ÍĞ…Á¥±¥•¹Ğ€ô¹•ÜA%±¥•¹Ğ ¤
+    return this.request<CompanyResearch>('POST', '/research/company', {
+      companyName,
+    });
+  }
+
+  /**
+   * Get user settings
+   */
+  async getSettings(): Promise<CustomSettings> {
+    return this.request<CustomSettings>('GET', '/settings');
+  }
+
+  /**
+   * Update user settings
+   */
+  async updateSettings(settings: Partial<CustomSettings>): Promise<CustomSettings> {
+    return this.request<CustomSettings>('PATCH', '/settings', settings);
+  }
+
+  /**
+   * Get all leads
+   */
+  async getLeads(): Promise<Lead[]> {
+    return this.request<Lead[]>('GET', '/leads');
+  }
+
+  /**
+   * Create a new lead
+   */
+  async createLead(lead: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>): Promise<Lead> {
+    return this.request<Lead>('POST', '/leads', lead);
+  }
+
+  /**
+   * Update a lead
+   */
+  async updateLead(
+    id: string,
+    lead: Partial<Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>>
+  ): Promise<Lead> {
+    return this.request<Lead>('PATCH', `/leads/${id}`, lead);
+  }
+
+  /**
+   * Delete a lead
+   */
+  async deleteLead(id: string): Promise<void> {
+    await this.request<void>('DELETE', `/leads/${id}`);
+  }
+
+  /**
+   * Get KPI analytics
+   */
+  async getKPI(params?: Record<string, string | number>): Promise<KPIData> {
+    const queryString = params
+      ? '?' + new URLSearchParams(params as Record<string, string>).toString()
+      : '';
+    return this.request<KPIData>('GET', `/analytics/kpi${queryString}`);
+  }
+
+  /**
+   * Get success factors analytics
+   */
+  async getSuccessFactors(): Promise<SuccessFactors> {
+    return this.request<SuccessFactors>('GET', '/analytics/success-factors');
+  }
+
+  /**
+   * Upload knowledge base file
+   */
+  async uploadKnowledge(formData: FormData): Promise<KnowledgeBase> {
+    const url = `${this.baseUrl}/settings/knowledge-base`;
+    const headers: HeadersInit = {};
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || `API Error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+}
+
+// Export singleton instance
+export const apiClient = new ApiClient();
