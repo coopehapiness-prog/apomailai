@@ -1,126 +1,130 @@
-'use client'
+'use client';
 
-import { CompanyResearch } from '@/lib/types'
-
+import { CompanyResearch } from '@/lib/types';
 interface ResearchReportProps {
-  research: CompanyResearch
+  research: CompanyResearch;
 }
 
-export function ResearchReport({ research }: ResearchReportProps) {
+export default function ResearchReport({ research }: ResearchReportProps) {
   return (
-    <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 mb-6">
-      <h2 className="text-xl font-bold text-white mb-6">調査レポート</h2>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 mb-6">
+        <h2 className="text-2xl font-bold text-white">調査レポート</h2>
+      </div>
 
-      {/* Grid Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* 企業概要 */}
-        <div className="bg-slate-700/50 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">企業概要</h3>
-          <p className="text-slate-100 text-sm mb-2">{research.overview}</p>
-          {research.overviewUrl && (
-            <a
-              href={research.overviewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 text-xs hover:underline"
-            >
-              詳細を見る →
-            </a>
-          )}
+      {/* Company Overview Card */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-blue-400 text-xl">🏢</span>
+          <h3 className="text-xl font-semibold text-white">企業概要</h3>
         </div>
-
-        {/* 事業概要 */}
-        <div className="bg-slate-700/50 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">事業概要</h3>
-          <p className="text-slate-100 text-sm mb-2">{research.businessDescription}</p>
-          {research.businessUrl && (
-            <a
-              href={research.businessUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 text-xs hover:underline"
-            >
-              詳細を見る →
-            </a>
-          )}
-        </div>
-
-        {/* 業界・ステージ */}
-        <div className="bg-slate-700/50 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">業界・ステージ</h3>
-          <div className="space-y-1">
-            <p className="text-slate-100 text-sm">
-              <span className="text-slate-400">業界: </span>
-              {research.industry}
-            </p>
-            <p className="text-slate-100 text-sm">
-              <span className="text-slate-400">ステージ: </span>
-              {research.stage}
-            </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-300">
+          <div>
+            <p className="text-sm text-gray-400">企業名</p>
+            <p className="text-lg font-medium text-white">{research.companyName}</p>
           </div>
-        </div>
-
-        {/* 従業界・ステージ */}
-        <div className="bg-slate-700/50 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">従業員規模</h3>
-          <p className="text-slate-100 text-sm">{research.employeeCount.toLocaleString()} 名</p>
-        </div>
-      </div>
-
-      {/* Latest News */}
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-white mb-3">最新ニュース</h3>
-        <div className="space-y-2">
-          {research.latestNews.slice(0, 5).map((news) => (
-            <div
-              key={news.id}
-              className="bg-slate-700/50 rounded-lg p-3 hover:bg-slate-700 transition-colors"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-slate-100 text-sm font-medium line-clamp-2">
-                    {news.title}
-                  </p>
-                  {news.date && (
-                    <p className="text-slate-500 text-xs mt-1">{news.date}</p>
-                  )}
-                </div>
-                {news.url && (
-                  <a
-                    href={news.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 text-xs hover:underline whitespace-nowrap flex-shrink-0"
-                  >
-                    リンク
-                  </a>
-                )}
-              </div>
+          {research.industry && (
+            <div>
+              <p className="text-sm text-gray-400">業界</p>
+              <p className="text-lg font-medium text-white">{research.industry}</p>
             </div>
-          ))}
+          )}
+          {research.employeeCount && (
+            <div>
+              <p className="text-sm text-gray-400">従業員数</p>
+              <p className="text-lg font-medium text-white">
+                {research.employeeCount.toLocaleString('ja-JP')}
+              </p>
+            </div>
+          )}
+          {research.foundedYear && (
+            <div>
+              <p className="text-sm text-gray-400">設立年</p>
+              <p className="text-lg font-medium text-white">{research.foundedYear}</p>
+            </div>
+          )}
         </div>
+        {research.overview && (
+          <div className="mt-4 pt-4 border-t border-slate-700">
+            <p className="text-sm text-gray-400 mb-2">概要</p>
+            <p className="text-gray-300 leading-relaxed">{research.overview}</p>
+          </div>
+        )}
       </div>
 
-      {/* Pain Points */}
-      {research.painPoints && research.painPoints.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-white mb-3">課題仮説</h3>
-          <div className="space-y-2">
-            {research.painPoints.map((painPoint, index) => (
+      {/* Challenges Card */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-yellow-400 text-xl">💡</span>
+          <h3 className="text-xl font-semibold text-white">課題仮説</h3>
+        </div>
+        {research.challenges && research.challenges.length > 0 ? (
+          <ul className="space-y-3">
+            {research.challenges.map((challenge, index) => (
+              <li
+                key={index}
+                className="flex gap-3 text-gray-300 items-start"
+              >
+                <span className="text-blue-400 font-bold mt-0.5">•</span>
+                <span className="leading-relaxed">{challenge}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-gray-400 italic">課題仮説がまだ設定されていません</p>
+        )}
+      </div>
+
+      {/* Success Factors Card */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-green-400 text-xl">✅</span>
+          <h3 className="text-xl font-semibold text-white">成功要因</h3>
+        </div>
+        {research.successFactors && research.successFactors.length > 0 ? (
+          <ul className="space-y-3">
+            {research.successFactors.map((factor, index) => (
+              <li
+                key={index}
+                className="flex gap-3 text-gray-300 items-start"
+              >
+                <span className="text-green-400 font-bold mt-0.5">✓</span>
+                <span className="leading-relaxed">{factor}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-gray-400 italic">成功要因がまだ設定されていません</p>
+        )}
+      </div>
+
+      {/* Latest News Card */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-orange-400 text-xl">📰</span>
+          <h3 className="text-xl font-semibold text-white">最新ニュース</h3>
+        </div>
+        {research.news && research.news.length > 0 ? (
+          <div className="space-y-4">
+            {research.news.map((newsItem, index) => (
               <div
                 key={index}
-                className="bg-slate-700/50 rounded-lg p-3 flex items-start gap-3"
+                className="pb-4 border-b border-slate-700 last:border-b-0 last:pb-0"
               >
-                <span className="text-blue-400 font-semibold flex-shrink-0">•</span>
-                <p className="text-slate-100 text-sm">{painPoint}</p>
+                <p className="text-sm text-gray-400 mb-1">
+                  {new Date(newsItem.date).toLocaleDateString('ja-JP')}
+                </p>
+                <p className="font-medium text-white mb-2">{newsItem.title}</p>
+                <p className="text-gray-400 text-sm leading-relaxed">
+                  {newsItem.summary}
+                </p>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-gray-400 italic">最新ニュースはまだ利用できません</p>
+        )}
+      </div>
     </div>
-  
-  
-  
-  
-  �
+  );
+}
