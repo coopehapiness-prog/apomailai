@@ -28,8 +28,8 @@ export default function LoginPage() {
         if (result?.error) {
           toast.error(result.error);
         } else if (result?.ok) {
-          toast.success('ログインしました');
-          router.push('/dashboard');
+          toast.success('ã­ã°ã¤ã³ãã¾ãã');
+          router.push('/dashboard/email');
         }
       } else {
         // Register new account
@@ -41,7 +41,7 @@ export default function LoginPage() {
 
         if (!registerRes.ok) {
           const error = await registerRes.json();
-          toast.error(error.message || '登録に失敗しました');
+          toast.error(error.message || 'ç»é²ã«å¤±æãã¾ãã');
           return;
         }
 
@@ -55,13 +55,13 @@ export default function LoginPage() {
         if (signInResult?.error) {
           toast.error(signInResult.error);
         } else if (signInResult?.ok) {
-          toast.success('登録してログインしました');
-          router.push('/dashboard');
+          toast.success('ç»é²ãã¦ã­ã°ã¤ã³ãã¾ãã');
+          router.push('/dashboard/email');
         }
       }
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : '予期しないエラーが発生しました'
+        error instanceof Error ? error.message : 'äºæããªãã¨ã©ã¼ãçºçãã¾ãã'
       );
     } finally {
       setIsLoading(false);
@@ -76,13 +76,13 @@ export default function LoginPage() {
             ApoMail AI
           </h1>
           <p className="text-gray-400 text-center mb-8">
-            {isLogin ? 'ログイン' : '新規登録'}
+            {isLogin ? 'ã­ã°ã¤ã³' : 'æ°è¦ç»é²'}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                メールアドレス
+                ã¡ã¼ã«ã¢ãã¬ã¹
               </label>
               <input
                 type="email"
@@ -96,7 +96,7 @@ export default function LoginPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                パスワード
+                ãã¹ã¯ã¼ã
               </label>
               <input
                 type="password"
@@ -104,7 +104,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
-                placeholder="••••••••"
+                placeholder="â¢â¢â¢â¢â¢â¢â¢â¢"
               />
             </div>
 
@@ -114,16 +114,16 @@ export default function LoginPage() {
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition"
             >
               {isLoading
-                ? '処理中...'
+                ? 'å¦çä¸­...'
                 : isLogin
-                ? 'ログイン'
-                : '新規登録'}
+                ? 'ã­ã°ã¤ã³'
+                : 'æ°è¦ç»é²'}
             </button>
           </form>
 
           <div className="mt-6 text-center">
             <p className="text-gray-400 text-sm">
-              {isLogin ? 'アカウントをお持ちでない方？' : 'すでにアカウントをお持ちの方？'}
+              {isLogin ? 'ã¢ã«ã¦ã³ãããæã¡ã§ãªãæ¹ï¼' : 'ãã§ã«ã¢ã«ã¦ã³ãããæã¡ã®æ¹ï¼'}
             </p>
             <button
               type="button"
@@ -134,13 +134,13 @@ export default function LoginPage() {
               }}
               className="text-blue-500 hover:text-blue-400 font-medium text-sm mt-2 transition"
             >
-              {isLogin ? '新規登録' : 'ログイン'}
+              {isLogin ? 'æ°è¦ç»é²' : 'ã­ã°ã¤ã³'}
             </button>
           </div>
         </div>
 
         <p className="text-gray-500 text-xs text-center mt-4">
-          このサイトはセキュアです
+          ãã®ãµã¤ãã¯ã»ã­ã¥ã¢ã§ã
         </p>
       </div>
     </div>
