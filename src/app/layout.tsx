@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { getServerSession } from 'next-auth/next'
-import { SessionProvider } from 'next-auth/react'
-import { Toaster } from 'react-hot-toast'
+import Providers from '@/components/Providers'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -19,10 +18,9 @@ export default async function RootLayout({
   return (
     <html lang="ja">
       <body>
-        <SessionProvider session={session}>
+        <Providers session={session}>
           {children}
-          <Toaster position="top-right" />
-        </SessionProvider>
+        </Providers>
       </body>
     </html>
   )
