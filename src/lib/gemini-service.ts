@@ -14,22 +14,30 @@ async function callCloudRun(prompt: string): Promise<string> {
     throw new Error('CLOUD_RUN_URL is not configured');
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout
 
-  if (!response.ok) {
-    throw new Error(`Cloud Run returned ${response.status}: ${response.statusText}`);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Cloud Run returned ${response.status}: ${response.statusText}`);
+    }
+
+    const json = (await response.json()) as { ok?: boolean; result?: string };
+    if (!json.ok || !json.result) {
+      throw new Error('Cloud Run returned an error or empty result');
+    }
+
+    return json.result;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const json = (await response.json()) as { ok?: boolean; result?: string };
-  if (!json.ok || !json.result) {
-    throw new Error('Cloud Run returned an error or empty result');
-  }
-
-  return json.result;
 }
 
 export class GeminiService {
@@ -66,7 +74,7 @@ export class GeminiService {
 
       const ctaInstructions: Record<string, string> = {
         call: 'CTA（行動喚起）は電話でのご相談を促す。30分の無料相談を提案する。',
-        demo: 'CTA（行動喚起）は製品デモンストレーションへの参加を促す。簡単なデモ申し込みリンクを提案する。',
+        demo: 'CTA（行動喚起）は製品デモンストレーションへの参加を促す。簡単なデモ畳し込みリンクを提案する。',
         meeting: 'CTA（行動喚起）はカレンダー予約ツール（Calendly等）を使用した時間設定を促す。',
         resource:
           'CTA（行動喚起）は関連リソースや資料ダウンロードを促す。価値のあるホワイトペーパーや業界レポートを提案する。',
@@ -130,7 +138,7 @@ ${freeText || 'なし'}
 以下の5つのメールパターンを日本語で作成してください：
 
 1. Pattern A - 経営層向け（ROI訴求）：CEOやCFO向け。投資対効果と事業成長を前面に。業績向上への具体的な貢献を示す。
-2. Pattern B - 現場責任者向け（効率化訴求）：部門長向け。業務効率化とプロセス改善を前面に。チームの生産性向上を示す。
+2. Pattern B - 現場責任者向け（効率化訴求）：部門長向け。業務効率化とプロセス改善を前面に。チームの生甧性向上を示す。
 3. Pattern C - 担当者向け（時短訴求）：実務者向け。個人の時間削減と作業効率化を前面に。日々の工数削減を示す。
 4. Pattern D - 短文ストレート型：簡潔で直接的。20-30秒で読める長さ。要点のみ。
 5. Pattern E - 社内転送特化型：受信者が上司に転送しやすい形式。「このサービス、うちでも使えそうですね」と言いやすい表現。
@@ -269,7 +277,7 @@ ${urlContext ? `【検索結果URL】\n${urlContext}` : ''}
   "business_url": "企業の事業紹介ページURL（不明な場合は空文字）",
   "news": [{"title": "ニュースタイトル", "summary": "要約（1文）", "url": "ニュース記事のURL（あれば）", "date": "日付（あれば）"}],
   "pains": ["課題1", "課題2", "課題3", "課題4", "課題5"],
-  "hypothesis": "このサービスが役に立つと思われる仮説（1-2文）"
+  "hypothesis": "このサービスが役に立つと思われる仮說（1-2文）"
 }
 
 重要: newsは最低5件以上出力してください。スクレイプ内容やニュース記事から5件以上の関連ニュースを抽出できない場合は、企業の業界動向や一般的なニュースも含めて5件以上にしてください。`;
@@ -360,7 +368,7 @@ ${urlContext ? `【検索結果URL】\n${urlContext}` : ''}
     return [
       {
         patternName: '経営層向け（ROI訴求）',
-        subject: '貴社の業績向上について - 実績ベースのご提案',
+        subject: '豴社の業績向上について - 実縞ベースのご提案',
         body: 'いつもお世話になっております。\n\n事業成長に向けた具体的なソリューションについてご案内させていただきたく、ご連絡いたしました。\n\n多くの業界企業様で導入実績がある当サービスは、業務効率化を通じた売上拡大に貢献いたします。\n\nぜひ一度、30分程度のお時間をいただき、詳しくご説明させていただきたいのですが、いかがでしょうか。\n\nよろしくお願いいたします。',
         targetPersona: 'executive',
       },
@@ -379,13 +387,13 @@ ${urlContext ? `【検索結果URL】\n${urlContext}` : ''}
       {
         patternName: '短文ストレート型',
         subject: '新サービスのご紹介',
-        body: 'お疲れ様です。\n\n業務効率化の新しいツールをご紹介させていただきたく、ご連絡いたしました。\n\n無料でお試しいただけますので、ぜひご検討ください。\n\nよろしくお願いいたします。',
+        body: 'お疮れ様です。\n\n業務効率化の新しいツールをご紹介させていただきたく、ご連絡いたしました。\n\n無料でお試しいただけますので、ぜひご検討ください。\n\nよろしくお願いいたします。',
         targetPersona: 'general',
       },
       {
         patternName: '社内転送特化型',
         subject: 'この新しいツール、ウチでも活用できそうですね',
-        body: '各位\n\n業務を効率化するための新しいサービスをご紹介いただきました。\n\n当社の課題を直接解決できそうなソリューションです。\n\n詳細は以下よりご確認いただけます。ご検討のほど、よろしくお願いいたします。',
+        body: '各位\n\n業務を効率化するための新しいサービスをご紹介いただきました。\n\n当社の課題を直接解決できそうなソリューションです。\n\n詳細は以下よりご確認いただけます。ご検訌のほど、よろしくお願いいたします。',
         targetPersona: 'general',
       },
     ];
