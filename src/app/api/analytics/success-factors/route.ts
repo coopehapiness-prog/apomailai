@@ -8,13 +8,13 @@ function categorizeFactor(
 ): 'structure' | 'tone' | 'cta' | 'content' | 'personalization' {
   if (factor.includes('CTA')) return 'cta';
   if (factor.includes('Persona')) return 'personalization';
-  if (factor.includes('層') || factor.includes('型')) return 'structure';
+  if (factor.includes('å±¤') || factor.includes('å')) return 'structure';
   return 'content';
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = authenticateRequest(request);
+    const userId = await authenticateRequest(request);
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
