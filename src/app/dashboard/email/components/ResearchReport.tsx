@@ -35,9 +35,9 @@ export function ResearchReport({ research }: ResearchReportProps) {
 
       {/* Grid Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* 企業概要 */}
+        {/* 企業榦+要 */}
         <div className="bg-slate-700/50 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">企業概要</h3>
+          <h3 clasName="text-sm font-semibold text-slate-300 mb-2">企業概要</h3>
           <p className="text-slate-100 text-sm mb-2">{overview || '情報なし'}</p>
           {homepageUrl && (
             <a
@@ -62,7 +62,7 @@ export function ResearchReport({ research }: ResearchReportProps) {
               rel="noopener noreferrer"
               className="text-blue-400 text-xs hover:underline"
             >
-              事業ページを見る →
+              事業・サービスページを見る →
             </a>
           )}
         </div>
