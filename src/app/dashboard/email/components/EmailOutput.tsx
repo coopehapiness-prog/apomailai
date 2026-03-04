@@ -21,24 +21,34 @@ export function EmailOutput({ patterns }: EmailOutputProps) {
     }))
   }
 
+  // Get a short concept description for each pattern
+  const getPatternConcept = (pattern: EmailPattern): string => {
+    return pattern.patternName || pattern.description || ''
+  }
+
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
       {/* Pattern Tabs */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
         {patterns.map((pattern, index) => (
           <button
-            key={pattern.id}
+            key={index}
             onClick={() => {
               setActiveTab(index)
               setExpandedSections({})
             }}
-            className={`px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
+            className={`px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap flex flex-col items-start ${
               activeTab === index
                 ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
           >
-            パターン {pattern.label}
+            <span className="text-sm font-bold">パターン{index + 1}</span>
+            {getPatternConcept(pattern) && (
+              <span className={`text-xs ${activeTab === index ? 'text-blue-100' : 'text-slate-400'}`}>
+                {getPatternConcept(pattern)}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -135,15 +145,15 @@ export function EmailOutput({ patterns }: EmailOutputProps) {
               </button>
               {expandedSections[2] && (
                 <div className="px-4 py-3 bg-slate-800 border-t border-slate-600 space-y-3">
-                  {currentPattern.followUpSections.map((scenario, index) => (
+                  {currentPattern.followUpScenarios.map((scenario, index) => (
                     <div key={index} className="space-y-2">
                       <p className="text-slate-100 text-sm whitespace-pre-wrap">
                         {scenario}
                       </p>
-                      {index < currentPattern.followUpSecnarios!.length - 1 && (
+                      {index < currentPattern.followUpScenarios!.length - 1 && (
                         <div className="border-t border-slate-700" />
                       )}
-                     </div>
+                    </div>
                   ))}
                 </div>
               )}
