@@ -36,6 +36,30 @@ export class ResearchService {
         }
       }
 
+      // Check if Google Search API is configured
+      const hasSearchApi = process.env.GOOGLE_SEARCH_API_KEY && process.env.GOOGLE_SEARCH_CX;
+
+      if (!hasSearchApi) {
+        // No search API - return minimal research template (skip Gemini call to save time)
+        console.log(`No Google Search API configured, using minimal template for ${companyName}`);
+        const minimalResearch: CompanyResearch = {
+          company_name: companyName,
+          overview: `${companyName}の企業情報`,
+          news: [],
+          pains: ['業務効率化', 'コスト削減', '生産性向上'],
+          scraped_at: new Date().toISOString(),
+        };
+
+        // Cache minimal result
+        await supabase.from('research_cache').insert({
+          company_name: companyName,
+          user_id: userId,
+          research_data: minimalResearch,
+        }).catch(() => {}); // Don't fail on cache error
+
+        return minimalResearch;
+      }
+
       // Perform Google Custom Search
       const searchResultsWithUrls = await this.googleSearchWithUrls(companyName);
       const searchResults = searchResultsWithUrls.map((r) => r.snippet);
