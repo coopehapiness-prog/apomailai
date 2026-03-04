@@ -28,8 +28,7 @@ export class ResearchService {
         .single();
 
       if (cached) {
-        const cacheAge =
-          (Date.now() - new Date(cached.created_at).getTime()) / (1000 * 60 * 60 * 24);
+        const cacheAge = (Date.now() - new Date(cached.created_at).getTime()) / (1000 * 60 * 60 * 24);
         if (cacheAge < 30) {
           console.log(`Using cached research for ${companyName}`);
           return cached.research_data as CompanyResearch;
@@ -80,22 +79,31 @@ export class ResearchService {
         }
       }
 
-      // Perform Google Custom Search
-      const searchResultsWithUrls = await this.googleSearchWithUrls(companyName);
-      const searchResults = searchResultsWithUrls.map((r) => r.snippet);
+      // Perform categorized Google Custom Searches
+      const newsResults = await this.searchSingle(`${companyName} 最新ニュース プレスリリース 2024 2025`);
+      const serviceResults = await this.searchSingle(`${companyName} サービス 製品 ソリューション 事業内容`);
+      const companyResults = await this.searchSingle(`${companyName} 会社概要 企業情報 コーポレートサイト`);
+
+      const allResults = [...newsResults, ...serviceResults, ...companyResults];
+      const searchSnippets = allResults.map((r) => r.snippet);
 
       // Scrape content from results
-      const scrapedContent = await this.scrapeSearchResults(searchResults);
+      const scrapedContent = await this.scrapeSearchResults(searchSnippets);
 
       // Parse news from search results
-      const newsArticles = this.parseNewsArticles(searchResults);
+      const newsArticles = this.parseNewsArticles(searchSnippets);
 
-      // Analyze with Gemini (pass URLs for richer data)
+      // Analyze with Gemini - pass categorized URLs for accurate linking
       const research = await geminiService.analyzeResearch(
         companyName,
         scrapedContent,
         newsArticles,
-        searchResultsWithUrls.map((r) => ({ title: r.title, url: r.url }))
+        allResults.map((r) => ({ title: r.title, url: r.url })),
+        {
+          newsUrls: newsResults.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+          serviceUrls: serviceResults.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+          companyUrls: companyResults.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+        }
       );
 
       // Cache the result
@@ -108,7 +116,6 @@ export class ResearchService {
       return research;
     } catch (error) {
       console.error('Error researching company:', error);
-
       // Return basic template on error
       return {
         company_name: companyName,
@@ -120,132 +127,65 @@ export class ResearchService {
     }
   }
 
-  private async googleSearchWithUrls(companyName: string): Promise<SearchResultWithUrl[]> {
+  private async searchSingle(query: string): Promise<SearchResultWithUrl[]> {
     const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
     const cx = process.env.GOOGLE_SEARCH_CX;
 
     if (!apiKey || !cx) {
-      console.warn('Google Search API credentials not configured, returning empty results');
+      console.warn('Google Search API credentials not configured');
       return [];
     }
 
-    const queries = [
-      `${companyName} 最新ニュース`,
-      `${companyName} 資金調達 採用`,
-      `${companyName} 会社概要 事業内容`,
-    ];
+    try {
+      const url = new URL('https://www.googleapis.com/customsearch/v1');
+      url.searchParams.append('q', query);
+      url.searchParams.append('key', apiKey);
+      url.searchParams.append('cx', cx);
+      url.searchParams.append('num', '5');
 
-    const results: SearchResultWithUrl[] = [];
-
-    for (const query of queries) {
-      try {
-        const url = new URL('https://www.googleapis.com/customsearch/v1');
-        url.searchParams.append('q', query);
-        url.searchParams.append('key', apiKey);
-        url.searchParams.append('cx', cx);
-        url.searchParams.append('num', '5');
-
-        const response = await fetch(url.toString());
-        if (!response.ok) {
-          console.warn(`Google Search failed for query: ${query}`);
-          continue;
-        }
-
-        const data = (await response.json()) as GoogleSearchResult;
-        if (data.items) {
-          for (const item of data.items.slice(0, 5)) {
-            results.push({
-              title: item.title || '',
-              url: item.link || '',
-              snippet: item.snippet || '',
-            });
-          }
-        }
-      } catch (error) {
-        console.error(`Error searching for ${query}:`, error);
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        console.warn(`Google Search failed for query: ${query}`);
+        return [];
       }
-    }
 
-    return results;
-  }
-
-  private async googleSearch(companyName: string): Promise<string[]> {
-    const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-    const cx = process.env.GOOGLE_SEARCH_CX;
-
-    if (!apiKey || !cx) {
-      console.warn('Google Search API credentials not configured, returning empty results');
-      return [];
-    }
-
-    const queries = [
-      `${companyName} 最新ニュース`,
-      `${companyName} 資金調達 採用`,
-      `${companyName} 会社概要 事業内容`,
-    ];
-
-    const results: string[] = [];
-
-    for (const query of queries) {
-      try {
-        const url = new URL('https://www.googleapis.com/customsearch/v1');
-        url.searchParams.append('q', query);
-        url.searchParams.append('key', apiKey);
-        url.searchParams.append('cx', cx);
-        url.searchParams.append('num', '3');
-
-        const response = await fetch(url.toString());
-        if (!response.ok) {
-          console.warn(`Google Search failed for query: ${query}`);
-          continue;
-        }
-
-        const data = (await response.json()) as GoogleSearchResult;
-        if (data.items) {
-          for (const item of data.items.slice(0, 3)) {
-            results.push(item.snippet || '');
-            results.push(item.title || '');
-          }
-        }
-      } catch (error) {
-        console.error(`Error searching for ${query}:`, error);
+      const data = (await response.json()) as GoogleSearchResult;
+      if (data.items) {
+        return data.items.slice(0, 5).map((item) => ({
+          title: item.title || '',
+          url: item.link || '',
+          snippet: item.snippet || '',
+        }));
       }
+    } catch (error) {
+      console.error(`Error searching for ${query}:`, error);
     }
 
-    return results;
+    return [];
   }
 
   private async scrapeSearchResults(snippets: string[]): Promise<string> {
     const content: string[] = [];
-
-    for (const snippet of snippets.slice(0, 10)) {
+    for (const snippet of snippets.slice(0, 15)) {
       if (snippet) {
         content.push(snippet.substring(0, 500));
       }
     }
-
     const combinedContent = content.join('\n');
     return combinedContent.substring(0, 5000);
   }
 
   private parseNewsArticles(searchResults: string[]): string[] {
     const newsKeywords = [
-      'ニュース',
-      '発表',
-      '資金調達',
-      '採用',
-      'イベント',
-      '新サービス',
-      '提携',
+      'ニュース', '発表', '資金調達', '採用', 'イベント',
+      '新サービス', '提携', 'プレスリリース', 'リリース', '開始',
     ];
     const news: string[] = [];
-
     for (const result of searchResults) {
       if (newsKeywords.some((keyword) => result.includes(keyword))) {
         news.push(result);
       }
     }
-
     return news.slice(0, 10);
   }
 }
