@@ -48,20 +48,20 @@ export function ResearchReport({ research }: ResearchReportProps) {
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
       {/* 2-column grid: Company Overview | Business Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         {/* Company Overview */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-          <div className="text-[11px] font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+          <div className="text-sm font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
             <span>\uD83C\uDFE2</span> \u4F01\u696D\u6982\u8981
           </div>
-          <div className="text-xs text-slate-200 leading-relaxed mb-2">
+          <div className="text-sm text-slate-200 leading-relaxed mb-2">
             <span className="font-bold">{companyName || '\u4E0D\u660E'}</span>
             {homepageUrl && (
               <a
                 href={homepageUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-400 hover:text-blue-300 ml-2 text-[10px]"
+                className="text-blue-400 hover:text-blue-300 ml-2 text-xs"
               >
                 \uD83D\uDD17 \u516C\u5F0F\u30B5\u30A4\u30C8
               </a>
@@ -72,17 +72,17 @@ export function ResearchReport({ research }: ResearchReportProps) {
           {/* Tags */}
           <div className="flex flex-wrap gap-1">
             {industry && (
-              <span className="inline-block text-[9px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 font-semibold">
+              <span className="inline-block text-[11px] px-2.5 py-1 rounded bg-blue-500/15 text-blue-400 font-semibold">
                 {industry}
               </span>
             )}
             {employees && (
-              <span className="inline-block text-[9px] px-2 py-0.5 rounded bg-green-500/15 text-green-400 font-semibold">
+              <span className="inline-block text-[11px] px-2.5 py-1 rounded bg-green-500/15 text-green-400 font-semibold">
                 {typeof employees === 'number' ? `${employees.toLocaleString()}\u540D` : employees}
               </span>
             )}
             {stage && (
-              <span className="inline-block text-[9px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-400 font-semibold">
+              <span className="inline-block text-[11px] px-2.5 py-1 rounded bg-purple-500/15 text-purple-400 font-semibold">
                 {stage}
               </span>
             )}
@@ -90,18 +90,18 @@ export function ResearchReport({ research }: ResearchReportProps) {
         </div>
 
         {/* Business Overview */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-          <div className="text-[11px] font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+          <div className="text-sm font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
             <span>\uD83D\uDCBC</span> \u4E8B\u696D\u6982\u8981
           </div>
-          <div className="text-xs text-slate-200 leading-relaxed">
+          <div className="text-sm text-slate-200 leading-relaxed">
             {business || '\u60C5\u5831\u306A\u3057'}
             {businessUrl && (
               <a
                 href={businessUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-400 hover:text-blue-300 ml-2 text-[10px]"
+                className="text-blue-400 hover:text-blue-300 ml-2 text-xs"
               >
                 \uD83D\uDD17 \u30B5\u30FC\u30D3\u30B9\u30DA\u30FC\u30B8
               </a>
@@ -111,19 +111,19 @@ export function ResearchReport({ research }: ResearchReportProps) {
       </div>
 
       {/* Latest News - full width */}
-      <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 mb-3">
-        <div className="text-[11px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+      <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-4">
+        <div className="text-sm font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
           <span>\uD83D\uDCF0</span> \u6700\u65B0\u30CB\u30E5\u30FC\u30B9
         </div>
         {newsItems.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {newsItems.map((news) => (
               <div key={news.id} style={{ marginBottom: '8px' }}>
                 {/* Source badge + date */}
-                <div className="flex items-center gap-1.5 mb-0.5">
+                <div className="flex items-center gap-2 mb-1">
                   {news.source && (
                     <span
-                      className={`inline-block text-[9px] px-2 py-0.5 rounded font-semibold ${getSourceBadgeClass(
+                      className={`inline-block text-[11px] px-2.5 py-1 rounded font-semibold ${getSourceBadgeClass(
                         news.type
                       )}`}
                     >
@@ -131,7 +131,7 @@ export function ResearchReport({ research }: ResearchReportProps) {
                     </span>
                   )}
                   {news.date && (
-                    <span className="text-[10px] text-slate-500">{news.date}</span>
+                    <span className="text-xs text-slate-500">{news.date}</span>
                   )}
                 </div>
                 {/* News title with arrow */}
@@ -140,44 +140,44 @@ export function ResearchReport({ research }: ResearchReportProps) {
                     href={news.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-400 text-xs hover:text-blue-300 hover:underline"
+                    className="text-blue-400 text-sm hover:text-blue-300 hover:underline"
                   >
                     {news.title} \u2192
                   </a>
                 ) : (
-                  <p className="text-xs text-slate-200">{news.title}</p>
+                  <p className="text-sm text-slate-200">{news.title}</p>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-slate-500 text-xs">\u30CB\u30E5\u30FC\u30B9\u60C5\u5831\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F</p>
+          <p className="text-slate-500 text-sm">\u30CB\u30E5\u30FC\u30B9\u60C5\u5831\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F</p>
         )}
       </div>
 
       {/* AI Challenge Hypothesis - full width */}
-      <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-        <div className="text-[11px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+      <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+        <div className="text-sm font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
           <span>\uD83E\uDDE0</span> AI\u306B\u3088\u308B\u8AB2\u984C\u4EEE\u8AAC
         </div>
         {painPoints.length > 0 || hypothesis ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {painPoints.map((pain, index) => (
               <div
                 key={index}
-                className="bg-blue-500/5 border-l-[3px] border-l-blue-500 px-3 py-2.5 rounded text-[11px] leading-relaxed text-slate-400"
+                className="bg-blue-500/5 border-l-[3px] border-l-blue-500 px-4 py-3 rounded text-sm leading-relaxed text-slate-300"
               >
                 \u4EEE\u8AAC{index + 1}\uFF1A{pain}
               </div>
             ))}
             {hypothesis && (
-              <div className="bg-blue-500/5 border-l-[3px] border-l-blue-500 px-3 py-2.5 rounded text-[11px] leading-relaxed text-slate-400">
+              <div className="bg-blue-500/5 border-l-[3px] border-l-blue-500 px-4 py-3 rounded text-sm leading-relaxed text-slate-300">
                 {hypothesis}
               </div>
             )}
           </div>
         ) : (
-          <p className="text-slate-500 text-xs">\u8AB2\u984C\u4EEE\u8AAC\u306E\u60C5\u5831\u304C\u3042\u308A\u307E\u305B\u3093</p>
+          <p className="text-slate-500 text-sm">\u8AB2\u984C\u4EEE\u8AAC\u306E\u60C5\u5831\u304C\u3042\u308A\u307E\u305B\u3093</p>
         )}
       </div>
     </div>
