@@ -31,7 +31,7 @@ export function EmailOutput({ patterns }: EmailOutputProps) {
                 : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-blue-500 hover:text-blue-400'
             }`}
           >
-            <span className="text-xs font-bold">
+            <span className="text-sm font-bold">
               {getPatternConcept(pattern) || `パターン${index + 1}`}
             </span>
           </button>
@@ -57,8 +57,8 @@ export function EmailOutput({ patterns }: EmailOutputProps) {
         </div>
 
         {/* Body */}
-        <div className="px-4 py-4">
-          <p className="text-xs leading-relaxed text-slate-300 whitespace-pre-wrap">
+        <div className="px-5 py-5">
+          <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap">
             {currentPattern.body}
           </p>
         </div>
