@@ -40,18 +40,18 @@ export function SubOutputs({ subOutputs, patterns }: SubOutputsProps) {
 
   const sections = [
     {
-      icon: '\uD83D\uDCDE',
-      title: '\u67B6\u96FB\u30B9\u30AF\u30EA\u30D7\u30C8\uFF0830\u79D2\uFF09',
+      icon: '📞',
+      title: '架電スクリプト（30秒）',
       content: phoneScript,
     },
     {
-      icon: '\uD83C\uDFAC',
-      title: '\u52D5\u753B\u30D7\u30ED\u30F3\u30D7\u30C8\uFF08Sora\u7528\uFF09',
+      icon: '🎬',
+      title: '動画プロンプト（Sora用）',
       content: videoPrompt,
     },
     {
-      icon: '\uD83D\uDCC5',
-      title: '\u8FFD\u6483\u30B7\u30CA\u30EA\u30AA\uFF083\u65E5\u5F8C / 1\u9031\u9593\u5F8C / \u6398\u308A\u8D77\u3053\u3057\uFF09',
+      icon: '📅',
+      title: '追撃シナリオ（3日後 / 1週間後 / 掘り起こし）',
       content: followUpText,
     },
   ].filter((s) => s.content)
@@ -77,7 +77,7 @@ export function SubOutputs({ subOutputs, patterns }: SubOutputsProps) {
                 expanded[idx] ? 'rotate-90' : ''
               }`}
             >
-              \u25B6
+              ▶
             </span>
           </button>
           {expanded[idx] && (
@@ -85,7 +85,7 @@ export function SubOutputs({ subOutputs, patterns }: SubOutputsProps) {
               <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap mb-3">
                 {section.content}
               </p>
-              <CopyButton text={section.content} label="\u30B3\u30D4\u30FC" />
+              <CopyButton text={section.content} label="コピー" />
             </div>
           )}
         </div>
