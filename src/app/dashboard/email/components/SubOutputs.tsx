@@ -59,7 +59,7 @@ export function SubOutputs({ subOutputs, patterns }: SubOutputsProps) {
   if (sections.length === 0) return null
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2.5">
       {sections.map((section, idx) => (
         <div
           key={idx}
@@ -67,13 +67,13 @@ export function SubOutputs({ subOutputs, patterns }: SubOutputsProps) {
         >
           <button
             onClick={() => toggle(idx)}
-            className="w-full flex items-center justify-between px-4 py-3 bg-slate-800 hover:bg-slate-700/80 transition-colors"
+            className="w-full flex items-center justify-between px-5 py-3.5 bg-slate-800 hover:bg-slate-700/80 transition-colors"
           >
-            <span className="text-xs font-semibold text-slate-400">
+            <span className="text-sm font-semibold text-slate-300">
               {section.icon} {section.title}
             </span>
             <span
-              className={`text-[9px] text-slate-500 transition-transform duration-200 ${
+              className={`text-xs text-slate-500 transition-transform duration-200 ${
                 expanded[idx] ? 'rotate-90' : ''
               }`}
             >
@@ -81,8 +81,8 @@ export function SubOutputs({ subOutputs, patterns }: SubOutputsProps) {
             </span>
           </button>
           {expanded[idx] && (
-            <div className="bg-slate-900 border-t border-slate-700 px-4 py-3">
-              <p className="text-[11px] leading-relaxed text-slate-400 whitespace-pre-wrap mb-3">
+            <div className="bg-slate-900 border-t border-slate-700 px-5 py-4">
+              <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap mb-3">
                 {section.content}
               </p>
               <CopyButton text={section.content} label="\u30B3\u30D4\u30FC" />
