@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { EmailPattern } from '@/lib/types'
-import { CopyButton } from 'A/components/CopyButton'
+import { CopyButton } from '@/components/CopyButton'
 
 interface EmailOutputProps {
   patterns: EmailPattern[]
