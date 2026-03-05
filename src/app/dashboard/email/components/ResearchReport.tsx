@@ -52,10 +52,10 @@ export function ResearchReport({ research }: ResearchReportProps) {
         {/* Company Overview */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
           <div className="text-sm font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
-            <span>\uD83C\uDFE2</span> \u4F01\u696D\u6982\u8981
+            <span>🏢</span> 企業概要
           </div>
           <div className="text-sm text-slate-200 leading-relaxed mb-2">
-            <span className="font-bold">{companyName || '\u4E0D\u660E'}</span>
+            <span className="font-bold">{companyName || '不明'}</span>
             {homepageUrl && (
               <a
                 href={homepageUrl}
@@ -63,11 +63,11 @@ export function ResearchReport({ research }: ResearchReportProps) {
                 rel="noopener noreferrer"
                 className="text-blue-400 hover:text-blue-300 ml-2 text-xs"
               >
-                \uD83D\uDD17 \u516C\u5F0F\u30B5\u30A4\u30C8
+                🔗 公式サイト
               </a>
             )}
             <br />
-            {overview || '\u60C5\u5831\u306A\u3057'}
+            {overview || '情報なし'}
           </div>
           {/* Tags */}
           <div className="flex flex-wrap gap-1">
@@ -78,7 +78,7 @@ export function ResearchReport({ research }: ResearchReportProps) {
             )}
             {employees && (
               <span className="inline-block text-[11px] px-2.5 py-1 rounded bg-green-500/15 text-green-400 font-semibold">
-                {typeof employees === 'number' ? `${employees.toLocaleString()}\u540D` : employees}
+                {typeof employees === 'number' ? `${employees.toLocaleString()}名` : employees}
               </span>
             )}
             {stage && (
@@ -92,10 +92,10 @@ export function ResearchReport({ research }: ResearchReportProps) {
         {/* Business Overview */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
           <div className="text-sm font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
-            <span>\uD83D\uDCBC</span> \u4E8B\u696D\u6982\u8981
+            <span>💼</span> 事業概要
           </div>
           <div className="text-sm text-slate-200 leading-relaxed">
-            {business || '\u60C5\u5831\u306A\u3057'}
+            {business || '情報なし'}
             {businessUrl && (
               <a
                 href={businessUrl}
@@ -103,7 +103,7 @@ export function ResearchReport({ research }: ResearchReportProps) {
                 rel="noopener noreferrer"
                 className="text-blue-400 hover:text-blue-300 ml-2 text-xs"
               >
-                \uD83D\uDD17 \u30B5\u30FC\u30D3\u30B9\u30DA\u30FC\u30B8
+                🔗 サービスページ
               </a>
             )}
           </div>
@@ -113,7 +113,7 @@ export function ResearchReport({ research }: ResearchReportProps) {
       {/* Latest News - full width */}
       <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-4">
         <div className="text-sm font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
-          <span>\uD83D\uDCF0</span> \u6700\u65B0\u30CB\u30E5\u30FC\u30B9
+          <span>📰</span> 最新ニュース
         </div>
         {newsItems.length > 0 ? (
           <div className="space-y-3">
@@ -142,7 +142,7 @@ export function ResearchReport({ research }: ResearchReportProps) {
                     rel="noopener noreferrer"
                     className="text-blue-400 text-sm hover:text-blue-300 hover:underline"
                   >
-                    {news.title} \u2192
+                    {news.title} →
                   </a>
                 ) : (
                   <p className="text-sm text-slate-200">{news.title}</p>
@@ -151,14 +151,14 @@ export function ResearchReport({ research }: ResearchReportProps) {
             ))}
           </div>
         ) : (
-          <p className="text-slate-500 text-sm">\u30CB\u30E5\u30FC\u30B9\u60C5\u5831\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F</p>
+          <p className="text-slate-500 text-sm">ニュース情報が見つかりませんでした</p>
         )}
       </div>
 
       {/* AI Challenge Hypothesis - full width */}
       <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
         <div className="text-sm font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
-          <span>\uD83E\uDDE0</span> AI\u306B\u3088\u308B\u8AB2\u984C\u4EEE\u8AAC
+          <span>🧠</span> AIによる課題仮説
         </div>
         {painPoints.length > 0 || hypothesis ? (
           <div className="space-y-3">
@@ -167,7 +167,7 @@ export function ResearchReport({ research }: ResearchReportProps) {
                 key={index}
                 className="bg-blue-500/5 border-l-[3px] border-l-blue-500 px-4 py-3 rounded text-sm leading-relaxed text-slate-300"
               >
-                \u4EEE\u8AAC{index + 1}\uFF1A{pain}
+                仮説{index + 1}：{pain}
               </div>
             ))}
             {hypothesis && (
@@ -177,7 +177,7 @@ export function ResearchReport({ research }: ResearchReportProps) {
             )}
           </div>
         ) : (
-          <p className="text-slate-500 text-sm">\u8AB2\u984C\u4EEE\u8AAC\u306E\u60C5\u5831\u304C\u3042\u308A\u307E\u305B\u3093</p>
+          <p className="text-slate-500 text-sm">課題仮説の情報がありません</p>
         )}
       </div>
     </div>
