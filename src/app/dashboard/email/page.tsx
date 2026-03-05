@@ -233,27 +233,27 @@ export default function EmailPage() {
       </button>
 
       {/* ===== Section 1: Generated Email ===== */}
-      <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mb-3">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-3">
         ✉️ 生成メール
       </h2>
-      <p className="text-[11px] text-slate-500 -mt-2 mb-3 pl-[26px]">
+      <p className="text-sm text-slate-400 -mt-1 mb-4">
         {company} × {source} のリサーチ結果を反映
       </p>
 
       <EmailOutput patterns={patterns} />
 
       {/* ===== Section 2: AI Research Report ===== */}
-      <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mt-7 mb-3">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">
         🔍 AIリサーチレポート
       </h2>
-      <p className="text-[11px] text-slate-500 -mt-2 mb-3 pl-[26px]">
+      <p className="text-sm text-slate-400 -mt-1 mb-4">
         企業名から自動取得した情報と、AIによる課題仮説
       </p>
 
       {research && <ResearchReport research={research} />}
 
       {/* ===== Section 3: Related Outputs ===== */}
-      <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mt-7 mb-3">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">
         📎 関連アウトプット
       </h2>
 
@@ -263,22 +263,22 @@ export default function EmailPage() {
       />
 
       {/* ===== Section 4: Customize & Regenerate ===== */}
-      <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mt-7 mb-3">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">
         🎛️ カスタマイズして再生成
       </h2>
-      <p className="text-[11px] text-slate-500 -mt-2 mb-3 pl-[26px]">
+      <p className="text-sm text-slate-400 -mt-1 mb-4">
         チェックやフリーテキストで指示を入れて「再生成」すると、5パターンの文面が生成されます
       </p>
 
       {/* Customization Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Persona Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-          <div className="text-[11px] font-bold text-slate-400 mb-2">👤 ペルソナ</div>
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <div className="text-sm font-bold text-slate-300 mb-3">👤 ペルソナ</div>
           {PERSONAS.map((persona) => (
             <label
               key={persona.value}
-              className="flex items-center gap-1.5 py-1 text-[11px] text-slate-300 cursor-pointer hover:text-white"
+              className="flex items-center gap-1.5 py-1 text-sm text-slate-300 cursor-pointer hover:text-white"
             >
               <input
                 type="checkbox"
@@ -291,7 +291,7 @@ export default function EmailPage() {
                       : prev.personas.filter((p) => p !== persona.value),
                   }))
                 }}
-                className="w-3.5 h-3.5 rounded cursor-pointer accent-blue-500"
+                className="w-4 h-4 rounded cursor-pointer accent-blue-500"
               />
               {persona.label}
             </label>
@@ -299,13 +299,13 @@ export default function EmailPage() {
         </div>
 
         {/* Icebreaker News Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-          <div className="text-[11px] font-bold text-slate-400 mb-2">📰 アイスブレイク</div>
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <div className="text-sm font-bold text-slate-300 mb-3">📰 アイスブレイク</div>
           {newsItems.length > 0 ? (
             newsItems.map((news, idx) => (
               <label
                 key={news.id}
-                className="flex items-center gap-1.5 py-1 text-[11px] text-slate-300 cursor-pointer hover:text-white"
+                className="flex items-center gap-1.5 py-1 text-sm text-slate-300 cursor-pointer hover:text-white"
               >
                 <input
                   type="checkbox"
@@ -318,26 +318,26 @@ export default function EmailPage() {
                         : prev.news.filter((n) => n !== news.id),
                     }))
                   }}
-                  className="w-3.5 h-3.5 rounded cursor-pointer accent-blue-500 flex-shrink-0"
+                  className="w-4 h-4 rounded cursor-pointer accent-blue-500 flex-shrink-0"
                 />
                 <span className="line-clamp-1">{news.title}</span>
               </label>
             ))
           ) : (
-            <p className="text-[11px] text-slate-500">ニュース情報なし</p>
+            <p className="text-sm text-slate-500">ニュース情報なし</p>
           )}
         </div>
 
         {/* CTA Card - full width */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 md:col-span-2">
-          <div className="text-[11px] font-bold text-slate-400 mb-2">
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 md:col-span-2">
+          <div className="text-sm font-bold text-slate-300 mb-3">
             📩 メールの着地点（結びの誘導先）
           </div>
           <div className="flex gap-4 flex-wrap">
             {CTA_OPTIONS.map((cta) => (
               <label
                 key={cta.value}
-                className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer hover:text-white"
+                className="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer hover:text-white"
               >
                 <input
                   type="radio"
@@ -350,7 +350,7 @@ export default function EmailPage() {
                       cta: e.target.value,
                     }))
                   }}
-                  className="w-3.5 h-3.5 cursor-pointer accent-blue-500"
+                  className="w-4 h-4 cursor-pointer accent-blue-500"
                 />
                 {cta.label}
               </label>
@@ -360,11 +360,11 @@ export default function EmailPage() {
       </div>
 
       {/* Free Text + Chips */}
-      <div className="bg-slate-900 border border-slate-800 rounded-lg p-3.5 mt-3">
-        <div className="text-[11px] font-bold text-slate-400 mb-1">
+      <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 mt-4">
+        <div className="text-sm font-bold text-slate-300 mb-2">
           ✏️ フリーテキストで指示
         </div>
-        <p className="text-[10px] text-slate-500 mb-2">
+        <p className="text-xs text-slate-500 mb-2">
           生成したいメールのイメージや追加の指示を自由に入力してください
         </p>
         <textarea
@@ -376,17 +376,17 @@ export default function EmailPage() {
             }))
           }}
           placeholder="例：もっとカジュアルなトーンにして / コスト削減のメリットを強調して / 導入事例を具体的に入れて..."
-          rows={3}
+          rows={4}
           className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:border-blue-500 focus:outline-none resize-vertical"
-          style={{ minHeight: '80px', lineHeight: '1.6' }}
+          style={{ minHeight: '120px', lineHeight: '1.6' }}
         />
-        <div className="flex flex-wrap gap-1.5 mt-2">
+        <div className="flex flex-wrap gap-2 mt-3">
           {FREE_TEXT_CHIPS.map((chip) => (
             <button
               key={chip}
               type="button"
               onClick={() => toggleChip(chip)}
-              className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-colors cursor-pointer select-none ${
+              className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors cursor-pointer select-none ${
                 customization.usedChips.includes(chip)
                   ? 'bg-blue-500/25 border-blue-500 text-blue-300'
                   : 'bg-blue-500/10 border-blue-500/25 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500'
