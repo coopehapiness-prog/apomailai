@@ -10,13 +10,18 @@ const UpdateSettingsSchema = z.object({
   company: z.string().optional(),
   phoneNumber: z.string().optional(),
   senderEmail: z.string().optional(),
+  senderPhone: z.string().optional(),
   signature: z.string().optional(),
   serviceName: z.string().optional(),
   serviceDescription: z.string().optional(),
   serviceBenefit: z.string().optional(),
+  servicePrice: z.string().optional(),
+  serviceResults: z.string().optional(),
+  serviceStrengths: z.array(z.string()).optional(),
   tone: z.string().optional(),
   prompt: z.string().optional(),
   knowledgeBaseIds: z.array(z.string()).optional(),
+  personaPrompts: z.record(z.string()).optional(),
   serviceInfo: z.object({
     name: z.string().optional(),
     description: z.string().optional(),
@@ -57,9 +62,14 @@ export async function GET(request: NextRequest) {
           sender_name: '',
           sender_title: '',
           sender_company: '',
+          sender_email: '',
+          sender_phone: '',
           service_name: '',
           service_description: '',
           service_benefit: '',
+          service_price: '',
+          service_results: '',
+          signature: '',
           tone: '',
           prompt: '',
           created_at: new Date().toISOString(),
@@ -72,32 +82,23 @@ export async function GET(request: NextRequest) {
         console.error('Error creating settings:', createError);
         return NextResponse.json({ error: 'Failed to create settings' }, { status: 500 });
       }
+
       return NextResponse.json({ message: 'Settings created', settings: newSettings }, { status: 200 });
     }
 
-    // Parse extended_data JSON if present
-    let extendedData: Record<string, unknown> = {};
-    try {
-      if (settings.extended_data) {
-        extendedData = typeof settings.extended_data === 'string'
-          ? JSON.parse(settings.extended_data)
-          : settings.extended_data;
-      }
-    } catch {}
-
-    // Merge extended data into response
-    const merged = {
+    // Ensure all expected fields exist in response
+    const result = {
       ...settings,
-      sender_phone: extendedData.sender_phone || '',
-      sender_email: extendedData.sender_email || '',
-      signature: extendedData.signature || '',
-      service_strengths: extendedData.service_strengths || [],
-      service_price: extendedData.service_price || '',
-      service_results: extendedData.service_results || '',
-      persona_prompts: extendedData.persona_prompts || {},
+      sender_phone: settings.sender_phone || '',
+      sender_email: settings.sender_email || '',
+      signature: settings.signature || '',
+      service_price: settings.service_price || '',
+      service_results: settings.service_results || '',
+      service_strengths: settings.service_strengths || [],
+      persona_prompts: settings.persona_prompts || {},
     };
 
-    return NextResponse.json({ message: 'Settings retrieved successfully', settings: merged }, { status: 200 });
+    return NextResponse.json({ message: 'Settings retrieved successfully', settings: result }, { status: 200 });
   } catch (error) {
     console.error('Error in GET /settings:', error);
     return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
@@ -114,65 +115,52 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const validated = UpdateSettingsSchema.parse(body);
 
-    // First get existing extended_data
-    const { data: existing } = await supabase
-      .from('custom_settings')
-      .select('extended_data')
-      .eq('user_id', userId)
-      .single();
-
-    let extendedData: Record<string, unknown> = {};
-    try {
-      if (existing?.extended_data) {
-        extendedData = typeof existing.extended_data === 'string'
-          ? JSON.parse(existing.extended_data)
-          : existing.extended_data;
-      }
-    } catch {}
-
     const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
 
-    // Sender profile - core DB columns
+    // Sender profile fields
     if (validated.senderName !== undefined) updateData.sender_name = validated.senderName;
     if (validated.senderTitle !== undefined) updateData.sender_title = validated.senderTitle;
-    if (validated.senderCompany !== undefined || validated.company !== undefined)
+    if (validated.senderCompany !== undefined || validated.company !== undefined) {
       updateData.sender_company = validated.senderCompany || validated.company;
+    }
+    if (validated.phoneNumber !== undefined || validated.senderPhone !== undefined) {
+      updateData.sender_phone = validated.phoneNumber || validated.senderPhone;
+    }
+    if (validated.senderEmail !== undefined) updateData.sender_email = validated.senderEmail;
+    if (validated.signature !== undefined) updateData.signature = validated.signature;
 
-    // Sender profile - extended fields stored in JSON
-    if (validated.phoneNumber !== undefined) extendedData.sender_phone = validated.phoneNumber;
-    if (validated.senderEmail !== undefined) extendedData.sender_email = validated.senderEmail;
-    if (validated.signature !== undefined) extendedData.signature = validated.signature;
-
-    // Service info - core DB columns
+    // Service info - direct fields
     if (validated.serviceName !== undefined) updateData.service_name = validated.serviceName;
     if (validated.serviceDescription !== undefined) updateData.service_description = validated.serviceDescription;
     if (validated.serviceBenefit !== undefined) updateData.service_benefit = validated.serviceBenefit;
+    if (validated.servicePrice !== undefined) updateData.service_price = validated.servicePrice;
+    if (validated.serviceResults !== undefined) updateData.service_results = validated.serviceResults;
+    if (validated.serviceStrengths !== undefined) updateData.service_strengths = validated.serviceStrengths;
 
     // Service info - nested object
     if (validated.serviceInfo) {
       if (validated.serviceInfo.name !== undefined) updateData.service_name = validated.serviceInfo.name;
       if (validated.serviceInfo.description !== undefined) updateData.service_description = validated.serviceInfo.description;
-      if (validated.serviceInfo.strengths !== undefined) extendedData.service_strengths = validated.serviceInfo.strengths;
-      if (validated.serviceInfo.price !== undefined) extendedData.service_price = validated.serviceInfo.price;
-      if (validated.serviceInfo.results !== undefined) extendedData.service_results = validated.serviceInfo.results;
+      if (validated.serviceInfo.price !== undefined) updateData.service_price = validated.serviceInfo.price;
+      if (validated.serviceInfo.results !== undefined) updateData.service_results = validated.serviceInfo.results;
+      if (validated.serviceInfo.strengths !== undefined) updateData.service_strengths = validated.serviceInfo.strengths;
     }
 
-    // Prompt settings - core DB columns
+    // Prompt settings
     if (validated.tone !== undefined) updateData.tone = validated.tone;
     if (validated.prompt !== undefined) updateData.prompt = validated.prompt;
+    if (validated.personaPrompts !== undefined) updateData.persona_prompts = validated.personaPrompts;
     if (validated.promptSettings) {
       if (validated.promptSettings.basePrompt !== undefined) updateData.prompt = validated.promptSettings.basePrompt;
       if (validated.promptSettings.tone !== undefined) updateData.tone = validated.promptSettings.tone;
-      if (validated.promptSettings.personaPrompts !== undefined) extendedData.persona_prompts = validated.promptSettings.personaPrompts;
+      if (validated.promptSettings.personaPrompts !== undefined) updateData.persona_prompts = validated.promptSettings.personaPrompts;
     }
 
     if (validated.knowledgeBaseIds !== undefined) updateData.knowledge_base_ids = validated.knowledgeBaseIds;
 
-    // Store extended data as JSON
-    updateData.extended_data = extendedData;
-
+    // Try full update first
     const { data: settings, error } = await supabase
       .from('custom_settings')
       .update(updateData)
@@ -181,45 +169,29 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (error) {
-      console.error('Error updating settings:', error);
-      // If extended_data column doesn't exist, try without it
-      delete updateData.extended_data;
-      const { data: fallbackSettings, error: fallbackError } = await supabase
+      console.error('Full update error:', error.message);
+      // Try removing potentially missing columns one by one
+      const optionalCols = ['service_strengths', 'persona_prompts', 'service_price', 'service_results', 'signature', 'sender_phone', 'sender_email'];
+      for (const col of optionalCols) {
+        if (updateData[col] !== undefined) {
+          delete updateData[col];
+        }
+      }
+      const { data: fb, error: fbErr } = await supabase
         .from('custom_settings')
         .update(updateData)
         .eq('user_id', userId)
         .select()
         .single();
 
-      if (fallbackError) {
-        console.error('Fallback update also failed:', fallbackError);
-        return NextResponse.json({ error: 'Failed to update settings: ' + fallbackError.message }, { status: 500 });
+      if (fbErr) {
+        console.error('Fallback update error:', fbErr.message);
+        return NextResponse.json({ error: 'Failed to update: ' + fbErr.message }, { status: 500 });
       }
-      return NextResponse.json({ message: 'Settings updated (partial)', settings: fallbackSettings }, { status: 200 });
+      return NextResponse.json({ message: 'Settings updated (partial)', settings: fb }, { status: 200 });
     }
 
-    // Merge extended data into response
-    let mergedExtended: Record<string, unknown> = {};
-    try {
-      if (settings.extended_data) {
-        mergedExtended = typeof settings.extended_data === 'string'
-          ? JSON.parse(settings.extended_data)
-          : settings.extended_data;
-      }
-    } catch {}
-
-    const merged = {
-      ...settings,
-      sender_phone: mergedExtended.sender_phone || '',
-      sender_email: mergedExtended.sender_email || '',
-      signature: mergedExtended.signature || '',
-      service_strengths: mergedExtended.service_strengths || [],
-      service_price: mergedExtended.service_price || '',
-      service_results: mergedExtended.service_results || '',
-      persona_prompts: mergedExtended.persona_prompts || {},
-    };
-
-    return NextResponse.json({ message: 'Settings updated successfully', settings: merged }, { status: 200 });
+    return NextResponse.json({ message: 'Settings updated successfully', settings }, { status: 200 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
