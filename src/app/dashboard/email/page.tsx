@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, FormEvent } from 'react'
-import { useEmailGeneration } from 'A/lib/hooks/useEmailGeneration'
+import { useEmailGeneration } from '@/lib/hooks/useEmailGeneration'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { ResearchReport } from './components/ResearchReport'
 import { EmailOutput } from './components/EmailOutput'
@@ -404,11 +404,11 @@ export default function EmailPage() {
         disabled={loading}
         className="w-full py-3.5 mt-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-bold cursor-pointer transition-shadow hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden flex items-center justify-center gap-2"
       >
-        <span class="absolute inset-0 pointer-events-none" style={{
+        <span className="absolute inset-0 pointer-events-none" style={{
           background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)',
           animation: 'shimmer 2s infinite',
         }} />
-        {loading ? '再生成中...' : '��� 選択内容でネすルエェスが生成（5����)'}
+        {loading ? '再生成中...' : '🔄 選択内容で再生成（5パターン）'}
       </button>
 
       <style>{`
@@ -418,6 +418,5 @@ export default function EmailPage() {
         }
       `}</style>
     </div>
-  
-  }
+  )
 }
