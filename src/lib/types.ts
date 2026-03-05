@@ -63,7 +63,7 @@ export interface CompanyResearch {
   employees?: number | string
   homepage_url?: string
   business_url?: string
-  news: Array<{ title: string; summary?: string; url?: string; date?: string }>
+  news: Array<{ title: string; summary?: string; url?: string; date?: string; source?: string; type?: string }>
   pains: string[]
   hypothesis?: string
   scraped_at?: string
@@ -95,6 +95,9 @@ export interface EmailPattern {
   body: string
   targetPersona?: string
   description?: string
+  phoneScript?: string
+  videoPrompt?: string
+  followUpScenarios?: string[]
 }
 
 export interface GeneratedEmail {
