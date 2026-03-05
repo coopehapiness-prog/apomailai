@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { apiClient } from '@/lib/api-client'
-import { EmailGenRequest, EmailPattern, CompanyResearch } from 'A/lib/types'
+import { EmailGenRequest, EmailPattern, CompanyResearch } from '@/lib/types'
 
 interface SubOutputs {
   phone_script?: string
