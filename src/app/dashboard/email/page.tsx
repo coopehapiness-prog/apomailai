@@ -76,9 +76,9 @@ export default function EmailPage() {
     subOutputs: typeof subOutputs
     createdAt: string
   }
+
   const [emailHistory, setEmailHistory] = useState<HistoryItem[]>([])
 
-  // Load history from sessionStorage on mount
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem('email_history')
@@ -86,7 +86,6 @@ export default function EmailPage() {
     } catch {}
   }, [])
 
-  // Save to history when generation completes
   useEffect(() => {
     if (patterns.length > 0 && company) {
       const newItem: HistoryItem = {
@@ -106,23 +105,25 @@ export default function EmailPage() {
     }
   }, [patterns, company, source, research, subOutputs])
 
-  // Restore from history
   const restoreFromHistory = (item: HistoryItem) => {
-    // Use generate to set the state - but since we have the data, set it directly
-    // We need a way to restore state - let's update formData and trigger the hook
-    setFormData({ company: item.company, source: item.source as LeadSource | '', history: '' })
-    // Manually trigger generate with the company
-    generate({ companyName: item.company, source: item.source as any, history: '' }).catch(() => {})
+    setFormData({
+      company: item.company,
+      source: item.source as LeadSource | '',
+      history: ''
+    })
+    generate({
+      companyName: item.company,
+      source: item.source as any,
+      history: ''
+    }).catch(() => {})
   }
 
   const handleInitialSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-
     if (!formData.company || !formData.source) {
       toast.error('企業名とリードソースを入力してください')
       return
     }
-
     try {
       await generate({
         companyName: formData.company,
@@ -156,20 +157,12 @@ export default function EmailPage() {
         ? prev.usedChips.filter((c) => c !== chip)
         : [...prev.usedChips, chip]
       const newFreeText = isUsed
-        ? prev.freeText
-            .replace(chip, '')
-            .replace(/、\s*、/g, '、')
-            .replace(/^、\s*/, '')
-            .replace(/、\s*$/, '')
-            .trim()
-        : prev.freeText
-        ? `${prev.freeText.trim()}、${chip}`
-        : chip
+        ? prev.freeText.replace(chip, '').replace(/、\s*、/g, '、').replace(/^、\s*/, '').replace(/、\s*$/, '').trim()
+        : prev.freeText ? `${prev.freeText.trim()}、${chip}` : chip
       return { ...prev, usedChips: newChips, freeText: newFreeText }
     })
   }
 
-  // Normalize news items for checkbox display
   const newsItems = research
     ? (research.latestNews || research.news || []).map((item, idx) => ({
         id: (item as any).id || `news-${idx}`,
@@ -183,84 +176,42 @@ export default function EmailPage() {
       <div className="space-y-6">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">メール生成</h1>
-          <p className="text-slate-400">
-            企業情報を入力すると、AIが営業メールを自動生成します
-          </p>
+          <p className="text-slate-400">企業情報を入力すると、AIが営業メールを自動生成します</p>
         </div>
 
         <form onSubmit={handleInitialSubmit} className="space-y-6">
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 space-y-4">
             <div>
-              <label htmlFor="company" className="block text-sm font-semibold text-slate-200 mb-2">
-                企業名
-              </label>
-              <input
-                id="company"
-                type="text"
-                required
-                value={formData.company}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, company: e.target.value }))
-                }
-                placeholder="例: 株式会社XYZ"
-                className="w-full"
-              />
+              <label htmlFor="company" className="block text-sm font-semibold text-slate-200 mb-2">企業名</label>
+              <input id="company" type="text" required value={formData.company}
+                onChange={(e) => setFormData((prev) => ({ ...prev, company: e.target.value }))}
+                placeholder="例: 株式会社XYZ" className="w-full" />
             </div>
-
             <div>
-              <label htmlFor="source" className="block text-sm font-semibold text-slate-200 mb-2">
-                リードソース
-              </label>
-              <select
-                id="source"
-                required
-                value={formData.source}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    source: e.target.value as LeadSource | '',
-                  }))
-                }
-                className="w-full"
-              >
+              <label htmlFor="source" className="block text-sm font-semibold text-slate-200 mb-2">リードソース</label>
+              <select id="source" required value={formData.source}
+                onChange={(e) => setFormData((prev) => ({ ...prev, source: e.target.value as LeadSource | '' }))}
+                className="w-full">
                 <option value="">選択してください</option>
-                {LEAD_SOURCES.map((src) => (
-                  <option key={src} value={src}>
-                    {src}
-                  </option>
-                ))}
+                {LEAD_SOURCES.map((src) => (<option key={src} value={src}>{src}</option>))}
               </select>
             </div>
-
             <div>
-              <label htmlFor="history" className="block text-sm font-semibold text-slate-200 mb-2">
-                過去のやり取り（オプション）
-              </label>
-              <textarea
-                id="history"
-                value={formData.history}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, history: e.target.value }))
-                }
+              <label htmlFor="history" className="block text-sm font-semibold text-slate-200 mb-2">過去のやり取り（オプション）</label>
+              <textarea id="history" value={formData.history}
+                onChange={(e) => setFormData((prev) => ({ ...prev, history: e.target.value }))}
                 placeholder="過去のメールや会話の内容を入力すると、より適切なメールが生成されます"
-                rows={4}
-                className="w-full"
-              />
+                rows={4} className="w-full" />
             </div>
           </div>
 
           {error && (
-            <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-red-200 text-sm">
-              {error}
-            </div>
+            <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-red-200 text-sm">{error}</div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white font-semibold py-3 rounded-lg hover:from-blue-700 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-            {loading ? 'メール生成中...' : 'メール生成'}
+          <button type="submit" disabled={loading}
+            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white font-semibold py-3 rounded-lg hover:from-blue-700 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+            {loading ? 'メール生成仭...' : 'メール生成'}
           </button>
         </form>
       </div>
@@ -272,102 +223,59 @@ export default function EmailPage() {
     <div className="max-w-[820px] mx-auto pb-16">
       {loading && <LoadingOverlay />}
 
-      {/* Back button */}
-      <button
-        onClick={() => window.location.reload()}
-        className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-slate-400 text-xs font-semibold hover:border-blue-500 hover:text-blue-400 transition-colors mb-4"
-      >
+      <button onClick={() => window.location.reload()}
+        className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-slate-400 text-xs font-semibold hover:border-blue-500 hover:text-blue-400 transition-colors mb-4">
         ← 新規作成に戻る
       </button>
 
-      {/* ===== Section 1: Generated Email ===== */}
-      <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-3">
-        ✉️ 生成メール
-      </h2>
-      <p className="text-sm text-slate-400 -mt-1 mb-4">
-        {company} × {source} のリサーチ結果を反映
-      </p>
-
+      <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-3">✉️ 生成メール</h2>
+      <p className="text-sm text-slate-400 -mt-1 mb-4">{company} × {source} のリサーチ結果を反映</p>
       <EmailOutput patterns={patterns} />
 
-      {/* ===== Section 2: AI Research Report ===== */}
-      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">
-        🔍 AIリサーチレポート
-      </h2>
-      <p className="text-sm text-slate-400 -mt-1 mb-4">
-        企業名から自動取得した情報と、AIによる課題仮説
-      </p>
-
+      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">🔍 AIリサーチレポート</h2>
+      <p className="text-sm text-slate-400 -mt-1 mb-4">企業名から自動取得した情報と、AIによる課題仮説</p>
       {research && <ResearchReport research={research} />}
 
-      {/* ===== Section 3: Related Outputs ===== */}
-      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">
-        📎 関連アウトプット
-      </h2>
+      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">📎 関連アウトプット</h2>
+      <SubOutputs subOutputs={subOutputs || undefined} patterns={patterns} />
 
-      <SubOutputs
-        subOutputs={subOutputs || undefined}
-        patterns={patterns}
-      />
-
-      {/* ===== Section 4: Customize & Regenerate ===== */}
-      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">
-        🎛️ カスタマイズして再生成
-      </h2>
+      <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-10 mb-4">🎛️ カスタマイズして再生成</h2>
       <p className="text-sm text-slate-400 -mt-1 mb-4">
-        チェックやフリーテキストで指示を入れて「再生成」すると、5パターンの文面が生成されます
+        チェックやフリーテキストで指示を入れて「再生成」すると、4パターンの文面が生成されます
       </p>
 
       {/* Customization Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Persona Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-5">
           <div className="text-sm font-bold text-slate-300 mb-3">👤 ペルソナ</div>
           {PERSONAS.map((persona) => (
-            <label
-              key={persona.value}
-              className="flex items-center gap-1.5 py-1 text-sm text-slate-300 cursor-pointer hover:text-white"
-            >
-              <input
-                type="checkbox"
-                checked={customization.personas.includes(persona.value)}
+            <label key={persona.value} className="flex items-center gap-1.5 py-1 text-sm text-slate-300 cursor-pointer hover:text-white">
+              <input type="checkbox" checked={customization.personas.includes(persona.value)}
                 onChange={(e) => {
                   setCustomization((prev) => ({
                     ...prev,
-                    personas: e.target.checked
-                      ? [...prev.personas, persona.value]
-                      : prev.personas.filter((p) => p !== persona.value),
+                    personas: e.target.checked ? [...prev.personas, persona.value] : prev.personas.filter((p) => p !== persona.value),
                   }))
                 }}
-                className="w-4 h-4 rounded cursor-pointer accent-blue-500"
-              />
+                className="w-4 h-4 rounded cursor-pointer accent-blue-500" />
               {persona.label}
             </label>
           ))}
         </div>
 
-        {/* Icebreaker News Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-5">
           <div className="text-sm font-bold text-slate-300 mb-3">📰 アイスブレイク</div>
           {newsItems.length > 0 ? (
             newsItems.map((news, idx) => (
-              <label
-                key={news.id}
-                className="flex items-center gap-1.5 py-1 text-sm text-slate-300 cursor-pointer hover:text-white"
-              >
-                <input
-                  type="checkbox"
-                  checked={customization.news.includes(news.id)}
+              <label key={news.id} className="flex items-center gap-1.5 py-1 text-sm text-slate-300 cursor-pointer hover:text-white">
+                <input type="checkbox" checked={customization.news.includes(news.id)}
                   onChange={(e) => {
                     setCustomization((prev) => ({
                       ...prev,
-                      news: e.target.checked
-                        ? [...prev.news, news.id]
-                        : prev.news.filter((n) => n !== news.id),
+                      news: e.target.checked ? [...prev.news, news.id] : prev.news.filter((n) => n !== news.id),
                     }))
                   }}
-                  className="w-4 h-4 rounded cursor-pointer accent-blue-500 flex-shrink-0"
-                />
+                  className="w-4 h-4 rounded cursor-pointer accent-blue-500 flex-shrink-0" />
                 <span className="line-clamp-1">{news.title}</span>
               </label>
             ))
@@ -376,30 +284,14 @@ export default function EmailPage() {
           )}
         </div>
 
-        {/* CTA Card - full width */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 md:col-span-2">
-          <div className="text-sm font-bold text-slate-300 mb-3">
-            📩 メールの着地点（結びの誘導先）
-          </div>
+          <div className="text-sm font-bold text-slate-300 mb-3">📩 メールの着地点（結びの誘導先）</div>
           <div className="flex gap-4 flex-wrap">
             {CTA_OPTIONS.map((cta) => (
-              <label
-                key={cta.value}
-                className="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer hover:text-white"
-              >
-                <input
-                  type="radio"
-                  name="cta"
-                  value={cta.value}
-                  checked={customization.cta === cta.value}
-                  onChange={(e) => {
-                    setCustomization((prev) => ({
-                      ...prev,
-                      cta: e.target.value,
-                    }))
-                  }}
-                  className="w-4 h-4 cursor-pointer accent-blue-500"
-                />
+              <label key={cta.value} className="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer hover:text-white">
+                <input type="radio" name="cta" value={cta.value} checked={customization.cta === cta.value}
+                  onChange={(e) => { setCustomization((prev) => ({ ...prev, cta: e.target.value })) }}
+                  className="w-4 h-4 cursor-pointer accent-blue-500" />
                 {cta.label}
               </label>
             ))}
@@ -407,64 +299,36 @@ export default function EmailPage() {
         </div>
       </div>
 
-      {/* Free Text + Chips */}
       <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 mt-4">
-        <div className="text-sm font-bold text-slate-300 mb-2">
-          ✏️ フリーテキストで指示
-        </div>
-        <p className="text-xs text-slate-500 mb-2">
-          生成したいメールのイメージや追加の指示を自由に入力してください
-        </p>
-        <textarea
-          value={customization.freeText}
-          onChange={(e) => {
-            setCustomization((prev) => ({
-              ...prev,
-              freeText: e.target.value,
-            }))
-          }}
+        <div className="text-sm font-bold text-slate-300 mb-2">✏️ フリーテキストで指示</div>
+        <p className="text-xs text-slate-500 mb-2">生成したいメールのイメージや追加の指示を自由に入力してください</p>
+        <textarea value={customization.freeText}
+          onChange={(e) => { setCustomization((prev) => ({ ...prev, freeText: e.target.value })) }}
           placeholder="例：もっとカジュアルなトーンにして / コスト削減のメリットを強調して / 導入事例を具体的に入れて..."
           rows={4}
           className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:border-blue-500 focus:outline-none resize-vertical"
-          style={{ minHeight: '120px', lineHeight: '1.6' }}
-        />
+          style={{ minHeight: '120px', lineHeight: '1.6' }} />
         <div className="flex flex-wrap gap-2 mt-3">
           {FREE_TEXT_CHIPS.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              onClick={() => toggleChip(chip)}
+            <button key={chip} type="button" onClick={() => toggleChip(chip)}
               className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors cursor-pointer select-none ${
                 customization.usedChips.includes(chip)
                   ? 'bg-blue-500/25 border-blue-500 text-blue-300'
                   : 'bg-blue-500/10 border-blue-500/25 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500'
-              }`}
-            >
+              }`}>
               {chip}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Regenerate Button */}
-      <button
-        onClick={handleRegenerate}
-        disabled={loading}
-        className="w-full py-3.5 mt-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-bold cursor-pointer transition-shadow hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden flex items-center justify-center gap-2"
-      >
-        <span className="absolute inset-0 pointer-events-none" style={{
-          background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)',
-          animation: 'shimmer 2s infinite',
-        }} />
-        {loading ? '再生成中...' : '🔄 選択内容で再生成（5パターン）'}
+      <button onClick={handleRegenerate} disabled={loading}
+        className="w-full py-3.5 mt-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-bold cursor-pointer transition-shadow hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden flex items-center justify-center gap-2">
+        <span className="absolute inset-0 pointer-events-none"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)', animation: 'shimmer 2s infinite' }} />
+        {loading ? '再生成中...' : '🔄 選択内容で再生成（4パターン）'}
       </button>
-
-      <style>{`
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-      `}</style>
+      <style>{`@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`}</style>
     </div>
   )
 }
