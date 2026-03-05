@@ -36,6 +36,39 @@ const UpdateSettingsSchema = z.object({
   }).optional(),
 }).passthrough();
 
+// Extended data is stored as JSON in service_benefit column
+// Format: {"__ext":true, "benefit":"...", "price":"...", "results":"...", ...}
+interface ExtData {
+  __ext: true;
+  benefit: string;
+  price: string;
+  results: string;
+  strengths: string[];
+  signature: string;
+  sender_phone: string;
+  sender_email: string;
+  persona_prompts: Record<string, string>;
+}
+
+function parseExtData(serviceBenefit: string | null): ExtData {
+  const defaults: ExtData = {
+    __ext: true, benefit: '', price: '', results: '',
+    strengths: [], signature: '', sender_phone: '', sender_email: '',
+    persona_prompts: {},
+  };
+  if (!serviceBenefit) return defaults;
+  try {
+    const parsed = JSON.parse(serviceBenefit);
+    if (parsed && parsed.__ext) return { ...defaults, ...parsed };
+  } catch {}
+  // Not JSON - treat as plain benefit text
+  return { ...defaults, benefit: serviceBenefit };
+}
+
+function serializeExtData(ext: ExtData): string {
+  return JSON.stringify(ext);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const userId = await authenticateRequest(request);
@@ -59,19 +92,9 @@ export async function GET(request: NextRequest) {
         .from('custom_settings')
         .insert({
           user_id: userId,
-          sender_name: '',
-          sender_title: '',
-          sender_company: '',
-          sender_email: '',
-          sender_phone: '',
-          service_name: '',
-          service_description: '',
-          service_benefit: '',
-          service_price: '',
-          service_results: '',
-          signature: '',
-          tone: '',
-          prompt: '',
+          sender_name: '', sender_title: '', sender_company: '',
+          service_name: '', service_description: '', service_benefit: '',
+          tone: '', prompt: '',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -82,20 +105,30 @@ export async function GET(request: NextRequest) {
         console.error('Error creating settings:', createError);
         return NextResponse.json({ error: 'Failed to create settings' }, { status: 500 });
       }
-
-      return NextResponse.json({ message: 'Settings created', settings: newSettings }, { status: 200 });
+      const ext = parseExtData(newSettings?.service_benefit);
+      return NextResponse.json({ message: 'Settings created', settings: {
+        ...newSettings,
+        service_benefit: ext.benefit,
+        service_price: ext.price, service_results: ext.results,
+        service_strengths: ext.strengths, signature: ext.signature,
+        sender_phone: ext.sender_phone, sender_email: ext.sender_email,
+        persona_prompts: ext.persona_prompts,
+      }}, { status: 200 });
     }
 
-    // Ensure all expected fields exist in response
+    // Parse extended data from service_benefit
+    const ext = parseExtData(settings.service_benefit);
+
     const result = {
       ...settings,
-      sender_phone: settings.sender_phone || '',
-      sender_email: settings.sender_email || '',
-      signature: settings.signature || '',
-      service_price: settings.service_price || '',
-      service_results: settings.service_results || '',
-      service_strengths: settings.service_strengths || [],
-      persona_prompts: settings.persona_prompts || {},
+      service_benefit: ext.benefit,
+      sender_phone: ext.sender_phone,
+      sender_email: ext.sender_email,
+      signature: ext.signature,
+      service_price: ext.price,
+      service_results: ext.results,
+      service_strengths: ext.strengths,
+      persona_prompts: ext.persona_prompts,
     };
 
     return NextResponse.json({ message: 'Settings retrieved successfully', settings: result }, { status: 200 });
@@ -115,52 +148,65 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const validated = UpdateSettingsSchema.parse(body);
 
+    // Get existing settings to read current ext data
+    const { data: existing } = await supabase
+      .from('custom_settings')
+      .select('service_benefit')
+      .eq('user_id', userId)
+      .single();
+
+    const ext = parseExtData(existing?.service_benefit || null);
+
     const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
 
-    // Sender profile fields
+    // Sender profile - core DB columns
     if (validated.senderName !== undefined) updateData.sender_name = validated.senderName;
     if (validated.senderTitle !== undefined) updateData.sender_title = validated.senderTitle;
     if (validated.senderCompany !== undefined || validated.company !== undefined) {
       updateData.sender_company = validated.senderCompany || validated.company;
     }
-    if (validated.phoneNumber !== undefined || validated.senderPhone !== undefined) {
-      updateData.sender_phone = validated.phoneNumber || validated.senderPhone;
-    }
-    if (validated.senderEmail !== undefined) updateData.sender_email = validated.senderEmail;
-    if (validated.signature !== undefined) updateData.signature = validated.signature;
 
-    // Service info - direct fields
+    // Sender profile - extended fields (stored in service_benefit JSON)
+    if (validated.phoneNumber !== undefined || validated.senderPhone !== undefined) {
+      ext.sender_phone = validated.phoneNumber || validated.senderPhone || '';
+    }
+    if (validated.senderEmail !== undefined) ext.sender_email = validated.senderEmail;
+    if (validated.signature !== undefined) ext.signature = validated.signature;
+
+    // Service info - core DB columns
     if (validated.serviceName !== undefined) updateData.service_name = validated.serviceName;
     if (validated.serviceDescription !== undefined) updateData.service_description = validated.serviceDescription;
-    if (validated.serviceBenefit !== undefined) updateData.service_benefit = validated.serviceBenefit;
-    if (validated.servicePrice !== undefined) updateData.service_price = validated.servicePrice;
-    if (validated.serviceResults !== undefined) updateData.service_results = validated.serviceResults;
-    if (validated.serviceStrengths !== undefined) updateData.service_strengths = validated.serviceStrengths;
+    if (validated.serviceBenefit !== undefined) ext.benefit = validated.serviceBenefit;
+    if (validated.servicePrice !== undefined) ext.price = validated.servicePrice;
+    if (validated.serviceResults !== undefined) ext.results = validated.serviceResults;
+    if (validated.serviceStrengths !== undefined) ext.strengths = validated.serviceStrengths;
 
     // Service info - nested object
     if (validated.serviceInfo) {
       if (validated.serviceInfo.name !== undefined) updateData.service_name = validated.serviceInfo.name;
       if (validated.serviceInfo.description !== undefined) updateData.service_description = validated.serviceInfo.description;
-      if (validated.serviceInfo.price !== undefined) updateData.service_price = validated.serviceInfo.price;
-      if (validated.serviceInfo.results !== undefined) updateData.service_results = validated.serviceInfo.results;
-      if (validated.serviceInfo.strengths !== undefined) updateData.service_strengths = validated.serviceInfo.strengths;
+      if (validated.serviceInfo.price !== undefined) ext.price = validated.serviceInfo.price;
+      if (validated.serviceInfo.results !== undefined) ext.results = validated.serviceInfo.results;
+      if (validated.serviceInfo.strengths !== undefined) ext.strengths = validated.serviceInfo.strengths;
     }
 
-    // Prompt settings
+    // Prompt settings - core DB columns
     if (validated.tone !== undefined) updateData.tone = validated.tone;
     if (validated.prompt !== undefined) updateData.prompt = validated.prompt;
-    if (validated.personaPrompts !== undefined) updateData.persona_prompts = validated.personaPrompts;
+    if (validated.personaPrompts !== undefined) ext.persona_prompts = validated.personaPrompts;
     if (validated.promptSettings) {
       if (validated.promptSettings.basePrompt !== undefined) updateData.prompt = validated.promptSettings.basePrompt;
       if (validated.promptSettings.tone !== undefined) updateData.tone = validated.promptSettings.tone;
-      if (validated.promptSettings.personaPrompts !== undefined) updateData.persona_prompts = validated.promptSettings.personaPrompts;
+      if (validated.promptSettings.personaPrompts !== undefined) ext.persona_prompts = validated.promptSettings.personaPrompts;
     }
 
     if (validated.knowledgeBaseIds !== undefined) updateData.knowledge_base_ids = validated.knowledgeBaseIds;
 
-    // Try full update first
+    // Always serialize ext data into service_benefit
+    updateData.service_benefit = serializeExtData(ext);
+
     const { data: settings, error } = await supabase
       .from('custom_settings')
       .update(updateData)
@@ -169,29 +215,25 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (error) {
-      console.error('Full update error:', error.message);
-      // Try removing potentially missing columns one by one
-      const optionalCols = ['service_strengths', 'persona_prompts', 'service_price', 'service_results', 'signature', 'sender_phone', 'sender_email'];
-      for (const col of optionalCols) {
-        if (updateData[col] !== undefined) {
-          delete updateData[col];
-        }
-      }
-      const { data: fb, error: fbErr } = await supabase
-        .from('custom_settings')
-        .update(updateData)
-        .eq('user_id', userId)
-        .select()
-        .single();
-
-      if (fbErr) {
-        console.error('Fallback update error:', fbErr.message);
-        return NextResponse.json({ error: 'Failed to update: ' + fbErr.message }, { status: 500 });
-      }
-      return NextResponse.json({ message: 'Settings updated (partial)', settings: fb }, { status: 200 });
+      console.error('Update error:', error.message);
+      return NextResponse.json({ error: 'Failed to update: ' + error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ message: 'Settings updated successfully', settings }, { status: 200 });
+    // Parse ext data from saved settings for response
+    const savedExt = parseExtData(settings.service_benefit);
+    const merged = {
+      ...settings,
+      service_benefit: savedExt.benefit,
+      sender_phone: savedExt.sender_phone,
+      sender_email: savedExt.sender_email,
+      signature: savedExt.signature,
+      service_price: savedExt.price,
+      service_results: savedExt.results,
+      service_strengths: savedExt.strengths,
+      persona_prompts: savedExt.persona_prompts,
+    };
+
+    return NextResponse.json({ message: 'Settings updated successfully', settings: merged }, { status: 200 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
