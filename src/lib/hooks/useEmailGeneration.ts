@@ -2,7 +2,13 @@
 
 import { useState, useCallback } from 'react'
 import { apiClient } from '@/lib/api-client'
-import { EmailGenRequest, EmailPattern, CompanyResearch } from '@/lib/types'
+import { EmailGenRequest, EmailPattern, CompanyResearch } from 'A/lib/types'
+
+interface SubOutputs {
+  phone_script?: string
+  video_prompt?: string
+  follow_up_scenarios?: string[]
+}
 
 interface UseEmailGenerationState {
   company: string
@@ -10,6 +16,7 @@ interface UseEmailGenerationState {
   history: string
   patterns: EmailPattern[]
   research: CompanyResearch | null
+  subOutputs: SubOutputs | null
   loading: boolean
   error: string | null
 }
@@ -21,6 +28,7 @@ export function useEmailGeneration() {
     history: '',
     patterns: [],
     research: null,
+    subOutputs: null,
     loading: false,
     error: null,
   })
@@ -50,6 +58,7 @@ export function useEmailGeneration() {
             history: (request as any).history || '',
             patterns: result.patterns || [],
             research: result.research || null,
+            subOutputs: result.subOutputs || null,
             loading: false,
           }
           console.log('[HOOK] setState called, new patterns length:', newState.patterns.length)
@@ -101,6 +110,7 @@ export function useEmailGeneration() {
       history: '',
       patterns: [],
       research: null,
+      subOutputs: null,
       loading: false,
       error: null,
     })
