@@ -136,6 +136,8 @@ function getSmartEmailPatterns(
   research: CompanyResearch,
   settings: CustomSettings
 ): EmailPattern[] {
+  research = research || ({} as CompanyResearch);
+  settings = settings || ({} as CustomSettings);
   const senderName = (settings as any).sender_name || settings.senderName || 'ご担当';
   const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '弊社';
   const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '当サービス';
@@ -195,6 +197,8 @@ function getSmartSubOutputs(
   research: CompanyResearch,
   settings: CustomSettings
 ): { phone_script?: string; video_prompt?: string; follow_up_scenarios?: string[] } {
+  research = research || ({} as CompanyResearch);
+  settings = settings || ({} as CustomSettings);
   const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '当サービス';
   const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '弊社';
   const industry = (research as any).industry || '';
@@ -227,14 +231,16 @@ export class GeminiService {
   }): Promise<EmailPattern[]> {
     const {
       companyName,
-      research,
-      settings,
+      research: rawResearch,
+      settings: rawSettings,
       persona = 'executive',
       sourceType = 'web',
       ctaType = 'call',
       newsIdx = 0,
       freeText = '',
     } = params;
+    const research = rawResearch || ({} as CompanyResearch);
+    const settings = rawSettings || ({} as CustomSettings);
 
     try {
       const personaInstructions: Record<string, string> = {
@@ -333,7 +339,9 @@ ${freeText || 'なし'}
     settings: CustomSettings;
     selectedPattern?: string;
   }): Promise<{ phone_script?: string; video_prompt?: string; follow_up_scenarios?: string[] }> {
-    const { companyName, research, settings, selectedPattern } = params;
+    const { companyName, research: rawResearch, settings: rawSettings, selectedPattern } = params;
+    const research = rawResearch || ({} as CompanyResearch);
+    const settings = rawSettings || ({} as CustomSettings);
 
     try {
       const senderName = (settings as any).sender_name || settings.senderName || '';
@@ -391,7 +399,8 @@ ${selectedPattern || 'Pattern A'}
     companyName: string;
     research: CompanyResearch;
   }): Promise<{ summary: string; keyInsights: string[] }> {
-    const { companyName, research } = params;
+    const { companyName, research: rawResearch } = params;
+    const research = rawResearch || ({} as CompanyResearch);
 
     try {
       const industry = (research as any).industry || '';
@@ -531,6 +540,8 @@ ${news}
     research: CompanyResearch,
     settings: CustomSettings
   ): EmailPattern[] {
+    research = research || ({} as CompanyResearch);
+    settings = settings || ({} as CustomSettings);
     const senderName = (settings as any).sender_name || settings.senderName || 'ご担当';
     const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '弊社';
     const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '当サービス';
