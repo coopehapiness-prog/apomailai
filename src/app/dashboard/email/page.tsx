@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useEmailGeneration } from '@/lib/hooks/useEmailGeneration'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { ResearchReport } from './components/ResearchReport'
@@ -66,6 +66,54 @@ export default function EmailPage() {
     freeText: '',
     usedChips: [] as string[],
   })
+
+  // Email generation history
+  interface HistoryItem {
+    company: string
+    source: string
+    patterns: typeof patterns
+    research: typeof research
+    subOutputs: typeof subOutputs
+    createdAt: string
+  }
+  const [emailHistory, setEmailHistory] = useState<HistoryItem[]>([])
+
+  // Load history from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('email_history')
+      if (saved) setEmailHistory(JSON.parse(saved))
+    } catch {}
+  }, [])
+
+  // Save to history when generation completes
+  useEffect(() => {
+    if (patterns.length > 0 && company) {
+      const newItem: HistoryItem = {
+        company,
+        source: source || '',
+        patterns,
+        research,
+        subOutputs,
+        createdAt: new Date().toISOString(),
+      }
+      setEmailHistory(prev => {
+        const filtered = prev.filter(h => h.company !== company)
+        const updated = [newItem, ...filtered].slice(0, 10)
+        try { sessionStorage.setItem('email_history', JSON.stringify(updated)) } catch {}
+        return updated
+      })
+    }
+  }, [patterns, company, source, research, subOutputs])
+
+  // Restore from history
+  const restoreFromHistory = (item: HistoryItem) => {
+    // Use generate to set the state - but since we have the data, set it directly
+    // We need a way to restore state - let's update formData and trigger the hook
+    setFormData({ company: item.company, source: item.source as LeadSource | '', history: '' })
+    // Manually trigger generate with the company
+    generate({ companyName: item.company, source: item.source as any, history: '' }).catch(() => {})
+  }
 
   const handleInitialSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
