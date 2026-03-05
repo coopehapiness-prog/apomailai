@@ -572,3 +572,5 @@ ${news}
     ];
   }
 }
+
+export const geminiService = new GeminiService();
