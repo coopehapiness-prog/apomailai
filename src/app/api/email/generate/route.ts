@@ -20,7 +20,33 @@ const GenerateEmailSchema = z.object({
   freeText: z.string().optional(),
 });
 
-export const maxDuration = 60; // Vercel Pro: up to 60s, Hobby: 10s
+// Parse extended data stored as JSON in service_benefit column
+function parseExtendedSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...settings };
+  const sb = settings.service_benefit as string;
+  if (sb) {
+    try {
+      const parsed = JSON.parse(sb);
+      if (parsed && parsed.__ext) {
+        // Replace service_benefit with actual benefit text
+        result.service_benefit = parsed.benefit || '';
+        // Add extended fields
+        result.service_price = parsed.price || '';
+        result.service_results = parsed.results || '';
+        result.service_strengths = parsed.strengths || [];
+        result.signature = parsed.signature || '';
+        result.sender_phone = parsed.sender_phone || '';
+        result.sender_email = parsed.sender_email || '';
+        result.persona_prompts = parsed.persona_prompts || {};
+      }
+    } catch {
+      // Not JSON, use as-is
+    }
+  }
+  return result;
+}
+
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,18 +59,21 @@ export async function POST(request: NextRequest) {
     const validated = GenerateEmailSchema.parse(body);
 
     // Get user settings
-    const { data: settings, error: settingsError } = await supabase
+    const { data: rawSettings, error: settingsError } = await supabase
       .from('custom_settings')
       .select('*')
       .eq('user_id', userId)
       .single();
 
-    if (settingsError || !settings) {
+    if (settingsError || !rawSettings) {
       return NextResponse.json(
         { error: 'User settings not found' },
         { status: 404 }
       );
     }
+
+    // Parse extended data from service_benefit JSON
+    const settings = parseExtendedSettings(rawSettings);
 
     // Get or generate company research
     let research = await researchService.researchCompany(
@@ -79,7 +108,7 @@ export async function POST(request: NextRequest) {
         company_name: validated.companyName,
         patterns,
         company_research: research,
-        settings_id: settings.id,
+        settings_id: rawSettings.id,
         persona: validated.persona,
         source_type: validated.sourceType,
         cta_type: validated.ctaType,
@@ -93,7 +122,6 @@ export async function POST(request: NextRequest) {
 
     if (saveError) {
       console.error('Error saving generated emails:', saveError);
-      // Still return patterns even if save fails
       return NextResponse.json(
         {
           message: 'Emails generated (save warning)',
@@ -131,7 +159,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
     console.error('Error generating emails:', error);
     return NextResponse.json(
       { error: 'Failed to generate emails' },
