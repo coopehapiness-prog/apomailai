@@ -4,6 +4,8 @@ import { useState, useCallback } from 'react'
 import { apiClient } from '@/lib/api-client'
 import { EmailGenRequest, EmailPattern, CompanyResearch } from '@/lib/types'
 
+const STORAGE_KEY = 'apomailai_last_generation'
+
 interface SubOutputs {
   phone_script?: string
   video_prompt?: string
@@ -12,7 +14,7 @@ interface SubOutputs {
 
 interface UseEmailGenerationState {
   company: string
-  source: EmailGenRequest['source'] | ''
+  source: string
   history: string
   patterns: EmailPattern[]
   research: CompanyResearch | null
@@ -21,16 +23,68 @@ interface UseEmailGenerationState {
   error: string | null
 }
 
+function loadSavedState(): Partial<UseEmailGenerationState> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const saved = window.sessionStorage.getItem(STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (parsed.patterns && parsed.patterns.length > 0) {
+        return {
+          company: parsed.company || '',
+          source: parsed.source || '',
+          patterns: parsed.patterns,
+          research: parsed.research || null,
+          subOutputs: parsed.subOutputs || null,
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
+function saveState(data: {
+  company: string
+  source: string
+  patterns: EmailPattern[]
+  research: CompanyResearch | null
+  subOutputs: SubOutputs | null
+}) {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  } catch {
+    // ignore
+  }
+}
+
 export function useEmailGeneration() {
-  const [state, setState] = useState<UseEmailGenerationState>({
-    company: '',
-    source: '',
-    history: '',
-    patterns: [],
-    research: null,
-    subOutputs: null,
-    loading: false,
-    error: null,
+  const [state, setState] = useState<UseEmailGenerationState>(() => {
+    const saved = loadSavedState()
+    if (saved) {
+      return {
+        company: saved.company || '',
+        source: saved.source || '',
+        history: '',
+        patterns: saved.patterns || [],
+        research: saved.research || null,
+        subOutputs: saved.subOutputs || null,
+        loading: false,
+        error: null,
+      }
+    }
+    return {
+      company: '',
+      source: '',
+      history: '',
+      patterns: [],
+      research: null,
+      subOutputs: null,
+      loading: false,
+      error: null,
+    }
   })
 
   const generate = useCallback(
@@ -46,24 +100,33 @@ export function useEmailGeneration() {
         const result = await apiClient.generateEmail(request)
         console.log('[HOOK] API result received:', {
           hasPatterns: !!result?.patterns,
-          patternsIsArray: Array.isArray(result?.patterns),
           patternsLength: result?.patterns?.length,
           hasResearch: !!result?.research,
         })
-        setState((prev) => {
-          const newState = {
-            ...prev,
-            company: request.companyName,
-            source: (request as any).source || '',
-            history: (request as any).history || '',
-            patterns: result.patterns || [],
-            research: result.research || null,
-            subOutputs: result.subOutputs || null,
-            loading: false,
-          }
-          console.log('[HOOK] setState called, new patterns length:', newState.patterns.length)
-          return newState
-        })
+
+        const company = request.companyName
+        const source = (request as any).source || ''
+        const history = (request as any).history || ''
+        const patterns = result.patterns || []
+        const research = result.research || null
+        const subOutputs = result.subOutputs || null
+
+        setState((prev) => ({
+          ...prev,
+          company,
+          source,
+          history,
+          patterns,
+          research,
+          subOutputs,
+          loading: false,
+        }))
+
+        // Save to sessionStorage immediately
+        if (patterns.length > 0) {
+          saveState({ company, source, patterns, research, subOutputs })
+        }
+
         return result
       } catch (err) {
         console.error('[HOOK] Error in generate:', err)
@@ -93,38 +156,24 @@ export function useEmailGeneration() {
 
       const request: EmailGenRequest = {
         companyName: state.company,
-        source: state.source as EmailGenRequest['source'],
+        source: state.source as any,
         history: state.history,
         customization,
-      }
+      } as any
 
       return generate(request)
     },
     [state.company, state.source, state.history, generate]
   )
 
-  // Restore saved state from localStorage
-  const restore = useCallback(
-    (saved: {
-      company?: string
-      source?: string
-      patterns?: EmailPattern[]
-      research?: CompanyResearch | null
-      subOutputs?: SubOutputs | null
-    }) => {
-      setState((prev) => ({
-        ...prev,
-        company: saved.company || '',
-        source: (saved.source as any) || '',
-        patterns: saved.patterns || [],
-        research: saved.research || null,
-        subOutputs: saved.subOutputs || null,
-      }))
-    },
-    []
-  )
-
   const reset = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.removeItem(STORAGE_KEY)
+      } catch {
+        // ignore
+      }
+    }
     setState({
       company: '',
       source: '',
@@ -141,7 +190,6 @@ export function useEmailGeneration() {
     ...state,
     generate,
     regenerate,
-    restore,
     reset,
   }
 }
