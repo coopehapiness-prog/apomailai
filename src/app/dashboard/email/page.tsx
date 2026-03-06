@@ -8,36 +8,36 @@ import { EmailOutput } from './components/EmailOutput'
 import { SubOutputs } from './components/SubOutputs'
 import toast from 'react-hot-toast'
 
-type LeadSource = 'ã¦ã§ããã¼åå ' | 'è³æãã¦ã³ã­ã¼ã' | 'ãåãåãã' | 'å±ç¤ºä¼' | 'ç´¹ä»'
+type LeadSource = 'ウェビナー参加' | '資料ダウンロード' | 'お問い合わせ' | '展示会' | '紹介'
 
 const LEAD_SOURCES: LeadSource[] = [
-  'ã¦ã§ããã¼åå ',
-  'è³æãã¦ã³ã­ã¼ã',
-  'ãåãåãã',
-  'å±ç¤ºä¼',
-  'ç´¹ä»',
+  'ウェビナー参加',
+  '資料ダウンロード',
+  'お問い合わせ',
+  '展示会',
+  '紹介',
 ]
 
 const PERSONAS = [
-  { value: 'exec', label: 'çµå¶å±¤ï¼ROIã»äºæ¥­ã¤ã³ãã¯ãï¼' },
-  { value: 'mgr', label: 'ç¾å ´è²¬ä»»èï¼ãã¼ã å¹çåï¼' },
-  { value: 'staff', label: 'æå½èï¼ä½¿ããããã»æç­ï¼' },
+  { value: 'exec', label: '経嗶層（ROI・事業インパクト）' },
+  { value: 'mgr', label: '現場責任者（チーム効率化）' },
+  { value: 'staff', label: '担当者（使いやすさ・時短）' },
 ]
 
 const CTA_OPTIONS = [
-  { value: 'schedule', label: 'æ¥ç¨èª¿æ´URL' },
-  { value: 'question', label: 'è»½ãè³ªåã§è¿ä¿¡ä¿é²' },
-  { value: 'material', label: 'è³æéä»ã®ææ¡' },
+  { value: 'schedule', label: '日程調整URL' },
+  { value: 'question', label: '軽い質問で返信促進' },
+  { value: 'material', label: '資料送付の提案' },
 ]
 
 const FREE_TEXT_CHIPS = [
-  'ã«ã¸ã¥ã¢ã«ã«',
-  'ãã©ã¼ãã«ã«',
-  'ã³ã¹ãåæ¸ãå¼·èª¿',
-  'ç­ãã«',
-  'å°å¥äºä¾ãè¿½å ',
-  'ç·æ¥æ§ãåºã',
-  'ç«¶åã¨ã®å·®å¥å',
+  'カジュアルに',
+  'フォーマルに',
+  'コスト削減を強調',
+  '短めに',
+  '導入事例を追加',
+  '緊急性を出す',
+  '競合との差別化',
 ]
 
 export default function EmailPage() {
@@ -75,7 +75,7 @@ export default function EmailPage() {
     e.preventDefault()
 
     if (!formData.company || !formData.source) {
-      toast.error('ä¼æ¥­åã¨ãªã¼ãã½ã¼ã¹ãå¥åãã¦ãã ãã')
+      toast.error('企業名とリードソースを入力してください')
       return
     }
 
@@ -99,7 +99,7 @@ export default function EmailPage() {
         freeText: customization.freeText || undefined,
       }
       await regenerate(customizationData)
-      toast.success('ã¡ã¼ã«ãåçæãã¾ãã')
+      toast.success('メールを再生成しました')
     } catch (err) {
       // Error is handled by the hook
     }
@@ -118,12 +118,12 @@ export default function EmailPage() {
       const newFreeText = isUsed
         ? prev.freeText
             .replace(chip, '')
-            .replace(/ã\s*ã/g, 'ã')
-            .replace(/^ã\s*/, '')
-            .replace(/ã\s*$/, '')
+            .replace(/、\s*、/g, '、')
+            .replace(/^、\s*/, '')
+            .replace(/、\s*$/, '')
             .trim()
         : prev.freeText
-        ? `${prev.freeText.trim()}ã${chip}`
+        ? `${prev.freeText.trim()}、${chip}`
         : chip
       return { ...prev, usedChips: newChips, freeText: newFreeText }
     })
@@ -142,9 +142,9 @@ export default function EmailPage() {
     return (
       <div className="space-y-6">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">ã¡ã¼ã«çæ</h1>
+          <h1 className="text-3xl font-bold text-white mb-2">メール生成</h1>
           <p className="text-slate-400">
-            ä¼æ¥­æå ±ãå¥åããã¨ãAIãå¶æ¥­ã¡ã¼ã«ãèªåçæãã¾ã
+            企業情報を入力すると、AIが営業メールを自動生成します
           </p>
         </div>
 
@@ -152,7 +152,7 @@ export default function EmailPage() {
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 space-y-4">
             <div>
               <label htmlFor="company" className="block text-sm font-semibold text-slate-200 mb-2">
-                ä¼æ¥­å
+                企業名
               </label>
               <input
                 id="company"
@@ -162,14 +162,14 @@ export default function EmailPage() {
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, company: e.target.value }))
                 }
-                placeholder="ä¾: æ ªå¼ä¼ç¤¾XYZ"
+                placeholder="例: 株式会社XYZ"
                 className="w-full"
               />
             </div>
 
             <div>
               <label htmlFor="source" className="block text-sm font-semibold text-slate-200 mb-2">
-                ãªã¼ãã½ã¼ã¹
+                リードソース
               </label>
               <select
                 id="source"
@@ -183,7 +183,7 @@ export default function EmailPage() {
                 }
                 className="w-full"
               >
-                <option value="">é¸æãã¦ãã ãã</option>
+                <option value="">選択してください</option>
                 {LEAD_SOURCES.map((src) => (
                   <option key={src} value={src}>
                     {src}
@@ -194,7 +194,7 @@ export default function EmailPage() {
 
             <div>
               <label htmlFor="history" className="block text-sm font-semibold text-slate-200 mb-2">
-                éå»ã®ããåãï¼ãªãã·ã§ã³ï¼
+                過去のやり取り（オプション）
               </label>
               <textarea
                 id="history"
@@ -202,7 +202,7 @@ export default function EmailPage() {
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, history: e.target.value }))
                 }
-                placeholder="éå»ã®ã¡ã¼ã«ãä¼è©±ã®åå®¹ãå¥åããã¨ãããé©åãªã¡ã¼ã«ãçæããã¾ã"
+                placeholder="過去のメールや会話の内容を入力すると、より適切なメールが生成されます"
                 rows={4}
                 className="w-full"
               />
@@ -223,13 +223,13 @@ export default function EmailPage() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                ã¡ã¼ã«çæä¸­...
+                メール生成中...
               </span>
-            ) : 'ã¡ã¼ã«çæ'}
+            ) : 'メール生成'}
           </button>
         </form>
 
-        {/* History Panel */}
+        {/* 生成履歴 */}
         {generationHistory.length > 0 && (
           <div className="mt-8">
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -287,32 +287,32 @@ export default function EmailPage() {
         onClick={handleNewGeneration}
         className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-slate-400 text-xs font-semibold hover:border-blue-500 hover:text-blue-400 transition-colors mb-4"
       >
-        {'â æ°è¦ä½æã«æ»ã'}
+        {'← 新規作成に戻る'}
       </button>
 
       {/* ===== Section 1: Generated Email ===== */}
       <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mb-3">
-        {'âï¸ çæã¡ã¼ã«'}
+        {'✉️ 生成メール'}
       </h2>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3 pl-[26px]">
-        {company} {'Ã'} {source} ã®ãªãµã¼ãçµæãåæ 
+        {company} {'×'} {source} のリサーチ結果を反映
       </p>
 
       <EmailOutput patterns={patterns} />
 
       {/* ===== Section 2: AI Research Report ===== */}
       <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mt-7 mb-3">
-        {'ð AIãªãµã¼ãã¬ãã¼ã'}
+        {'🔍 AIリサーチレポート'}
       </h2>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3 pl-[26px]">
-        ä¼æ¥­åããèªååå¾ããæå ±ã¨ãAIã«ããèª²é¡ä»®èª¬
+        企業名から自動取得した情報と、AIによる課題仮説
       </p>
 
       {research && <ResearchReport research={research} />}
 
       {/* ===== Section 3: Related Outputs ===== */}
       <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mt-7 mb-3">
-        {'ð é¢é£ã¢ã¦ãããã'}
+        {'📎 関連アウトプット'}
       </h2>
 
       <SubOutputs
@@ -322,17 +322,17 @@ export default function EmailPage() {
 
       {/* ===== Section 4: Customize & Regenerate ===== */}
       <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mt-7 mb-3">
-        {'ðï¸ ã«ã¹ã¿ãã¤ãºãã¦åçæ'}
+        {'🎛️ カスタマイズして再生成'}
       </h2>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3 pl-[26px]">
-        ãã§ãã¯ãããªã¼ãã­ã¹ãã§æç¤ºãå¥ãã¦ãåçæãããã¨ã4ãã¿ã¼ã³ã®æé¢ãçæããã¾ã
+        チェックやフリーテキストで指示を入れて「再生成」すると、4パターンの文面が生成されます
       </p>
 
       {/* Customization Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         {/* Persona Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-          <div className="text-[11px] font-bold text-slate-400 mb-2">{'ð¤ ãã«ã½ã'}</div>
+          <div className="text-[11px] font-bold text-slate-400 mb-2">{'👤 ペルソナ'}</div>
           {PERSONAS.map((persona) => (
             <label
               key={persona.value}
@@ -358,8 +358,8 @@ export default function EmailPage() {
 
         {/* Icebreaker News Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-          <div className="text-[11px] font-bold text-slate-400 mb-1">{'ð° ã¢ã¤ã¹ãã¬ã¤ã¯'}</div>
-          <p className="text-[10px] text-slate-500 mb-2">ãã®ãã¥ã¼ã¹ãèµ·ç¹ã«ã¡ã¼ã«æé¢ãä½æ</p>
+          <div className="text-[11px] font-bold text-slate-400 mb-1">{'📰 アイスブレイク'}</div>
+          <p className="text-[10px] text-slate-500 mb-2">このニュースを起点にメール文面を作成</p>
           {newsItems.length > 0 ? (
             newsItems.map((news, idx) => (
               <label
@@ -383,14 +383,14 @@ export default function EmailPage() {
               </label>
             ))
           ) : (
-            <p className="text-[11px] text-slate-500">ãã¥ã¼ã¹æå ±ãªã</p>
+            <p className="text-[11px] text-slate-500">ニュース情報なし</p>
           )}
         </div>
 
         {/* CTA Card - full width */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 md:col-span-2">
           <div className="text-[11px] font-bold text-slate-400 mb-2">
-            {'ð© ã¡ã¼ã«ã®çå°ç¹ï¼çµã³ã®èªå°åï¼'}
+            {'📩 メールの着地点（結びの誘導先）'}
           </div>
           <div className="flex gap-4 flex-wrap">
             {CTA_OPTIONS.map((cta) => (
@@ -421,10 +421,10 @@ export default function EmailPage() {
       {/* Free Text + Chips */}
       <div className="bg-slate-900 border border-slate-800 rounded-lg p-3.5 mt-3">
         <div className="text-[11px] font-bold text-slate-400 mb-1">
-          {'âï¸ ããªã¼ãã­ã¹ãã§æç¤º'}
+          {'✏️ フリーテキストで指示'}
         </div>
         <p className="text-[10px] text-slate-500 mb-2">
-          çæãããã¡ã¼ã«ã®ã¤ã¡ã¼ã¸ãè¿½å ã®æç¤ºãèªç±ã«å¥åãã¦ãã ãã
+          生成したいメールのイメージや追加の指示を自由に入力してください
         </p>
         <textarea
           value={customization.freeText}
@@ -434,7 +434,7 @@ export default function EmailPage() {
               freeText: e.target.value,
             }))
           }}
-          placeholder="ä¾ï¼ãã£ã¨ã«ã¸ã¥ã¢ã«ãªãã¼ã³ã«ãã¦ / ã³ã¹ãåæ¸ã®ã¡ãªãããå¼·èª¿ãã¦ / å°å¥äºä¾ãå·ä½çã«å¥ãã¦..."
+          placeholder="例：もっとカジュアルなトーンにして / コスト削減のメリットを強調して / 導入事例を具体的に入れて..."
           rows={3}
           className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:border-blue-500 focus:outline-none resize-vertical"
           style={{ minHeight: '80px', lineHeight: '1.6' }}
@@ -470,9 +470,9 @@ export default function EmailPage() {
         {loading ? (
           <span className="flex items-center justify-center gap-2">
             <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-            åçæãã¦ãã¾ã...
+            再生成しています...
           </span>
-        ) : 'ð é¸æåå®¹ã§åçæï¼4ãã¿ã¼ã³ï¼'}
+        ) : '🔄 選択内容で再生成（4パターン）'}
       </button>
 
       <style>{`
