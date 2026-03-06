@@ -103,6 +103,27 @@ export function useEmailGeneration() {
     [state.company, state.source, state.history, generate]
   )
 
+  // Restore saved state from localStorage
+  const restore = useCallback(
+    (saved: {
+      company?: string
+      source?: string
+      patterns?: EmailPattern[]
+      research?: CompanyResearch | null
+      subOutputs?: SubOutputs | null
+    }) => {
+      setState((prev) => ({
+        ...prev,
+        company: saved.company || '',
+        source: (saved.source as any) || '',
+        patterns: saved.patterns || [],
+        research: saved.research || null,
+        subOutputs: saved.subOutputs || null,
+      }))
+    },
+    []
+  )
+
   const reset = useCallback(() => {
     setState({
       company: '',
@@ -120,6 +141,7 @@ export function useEmailGeneration() {
     ...state,
     generate,
     regenerate,
+    restore,
     reset,
   }
 }
