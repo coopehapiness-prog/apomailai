@@ -1,40 +1,25 @@
 import { CompanyResearch, CustomSettings, EmailPattern } from './types';
 
 const CLOUD_RUN_URL = process.env.CLOUD_RUN_URL || 'https://gemini-generate-fn-513563150820.asia-northeast1.run.app';
-const CLOUD_RUN_API_KEY = process.env.CLOUD_RUN_API_KEY || '';
-const CLOUD_RUN_USER_EMAIL = process.env.CLOUD_RUN_USER_EMAIL || '';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
 // ============================================================
 // Stage 1: Cloud Run (primary)
-// Per spec: POST <CLOUD_RUN_URL>/generate with x-api-key header
 // ============================================================
 async function callCloudRun(prompt: string): Promise<string> {
-  const baseUrl = CLOUD_RUN_URL;
-  if (!baseUrl) {
+  const url = CLOUD_RUN_URL;
+  if (!url) {
     throw new Error('CLOUD_RUN_URL is not configured');
   }
-
-  // Ensure /generate path is appended (per API spec)
-  const url = baseUrl.endsWith('/generate') ? baseUrl : `${baseUrl.replace(/\/$/, '')}/generate`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25000);
 
   try {
-    // Build headers per spec: Content-Type + x-api-key (if set) + x-user-email (if set)
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (CLOUD_RUN_API_KEY) {
-      headers['x-api-key'] = CLOUD_RUN_API_KEY;
-    }
-    if (CLOUD_RUN_USER_EMAIL) {
-      headers['x-user-email'] = CLOUD_RUN_USER_EMAIL;
-    }
-
     const response = await fetch(url, {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
       signal: controller.signal,
     });
@@ -44,7 +29,6 @@ async function callCloudRun(prompt: string): Promise<string> {
     }
 
     const json = (await response.json()) as { ok?: boolean; result?: string };
-
     if (!json.ok || !json.result) {
       throw new Error('Cloud Run returned an error or empty result');
     }
@@ -89,7 +73,6 @@ async function callGeminiDirect(prompt: string): Promise<string> {
 
     const json = await response.json();
     const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-
     if (!text) {
       throw new Error('Gemini API returned empty response');
     }
@@ -124,7 +107,7 @@ async function callAI(prompt: string): Promise<string> {
     console.warn('[AI] Gemini API Direct failed:', (geminiError as Error).message);
   }
 
-  // Both failed
+  // Both failed - throw to let caller handle Stage 3 (smart templates)
   throw new Error('All AI providers failed (Cloud Run + Gemini API Direct)');
 }
 
@@ -136,13 +119,12 @@ function getSmartEmailPatterns(
   research: CompanyResearch,
   settings: CustomSettings
 ): EmailPattern[] {
-  research = research || ({} as CompanyResearch);
-  settings = settings || ({} as CustomSettings);
   const senderName = (settings as any).sender_name || settings.senderName || 'ご担当';
   const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '弊社';
   const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '当サービス';
   const serviceDescription = (settings as any).service_description || settings.serviceInfo?.description || '';
   const serviceBenefit = (settings as any).service_benefit || settings.serviceInfo?.strengths?.join('、') || '';
+
   const industry = (research as any).industry || '';
   const painPoints = research.pains?.slice(0, 3) || [];
   const pain1 = painPoints[0] || '業務プロセスの改善';
@@ -151,11 +133,14 @@ function getSmartEmailPatterns(
   const overview = (research as any).overview || '';
   const business = (research as any).business || '';
 
+  // Build context-aware snippets
   const industryMention = industry ? `${industry}業界において` : '';
   const companyContext = overview
     ? `${companyName}様の${overview.substring(0, 50)}に関連して`
     : `${companyName}様の事業に関連して`;
-  const serviceIntro = serviceName !== '当サービス' ? `「${serviceName}」` : '弊社サービス';
+  const serviceIntro = serviceName !== '当サービス'
+    ? `「${serviceName}」`
+    : '弊社サービス';
   const benefitLine = serviceBenefit
     ? `${serviceIntro}は${serviceBenefit}を実現します。`
     : `${serviceIntro}は多くの企業様で業務改善の実績がございます。`;
@@ -164,14 +149,14 @@ function getSmartEmailPatterns(
     {
       patternName: '経営層向け（ROI訴求）',
       subject: `${companyName}様の${pain1}に関するご提案`,
-      body: `${companyName}\nご担当者様\n\nいつもお世話になっております。${senderCompany}の${senderName}です。\n\n${industryMention}${companyContext}、ご連絡いたしました。\n\n${companyName}様におかれましては「${pain1}」が重要な経営テーマではないかと考えております。${benefitLine}\n\n導入企業様では平均して20〜30%の業務効率改善を実現されており、貴社でも同様の成果が期待できると考えております。\n\nぜひ一度、30分程度のお時間をいただき、具体的な事例と貴社への適用イメージをご説明させていただければ幸いです。\n\nご都合のよろしい日時をご教示いただけますでしょうか。\n\nよろしくお願いいたします。`,
+      body: `${companyName}\nご担当者様\n\nいつもお世話になっております。${senderCompany}の${senderName}です。\n\n${industryMention}${companyContext}、ご連絡いたしました。\n\n${companyName}様におかれましては「${pain1}」が重要な経営テーマではないかと考えております。${benefitLine}\n\n導入企業様でね平均して20〜30%の業務効率改善を実現されており、貴社でも同様の成果が期待できると考えております。\n\nぜひ一度、30分程度のお時間をいただき、具体的な事例と貴社への適用イメージをご説明させていただければ幸いです。\n\nご都合のよろしい日時をご教示いただけますでしょうか。\n\nよろしくお願いいたします。`,
       targetPersona: 'executive',
       description: '経営層向け（ROI訴求）',
     },
     {
       patternName: '現場責任者向け（効率化訴求）',
       subject: `${pain2}を実現する新しいアプローチのご紹介`,
-      body: `${companyName}\nご担当者様\n\nお疲れ様です。${senderCompany}の${senderName}です。\n\n${companyName}様の${industry ? industry + '事業' : '事業'}において、「${pain2}」は現場レベルでも課題になっているのではないでしょうか。\n\n${serviceIntro}は、現場のオペレーションを効率化し、チーム全体の生産性を大幅に向上させるソリューションです。${serviceDescription ? '\n\n' + serviceDescription : ''}\n\n既存の業務フローを大きく変えることなく導入いただけるため、現場への負担を最小限に抑えられます。\n\n15分程度の簡単なデモンストレーションで、具体的な効果をお示しできます。ご興味がございましたらお気軽にお声がけください。\n\nよろしくお願いいたします。`,
+      body: `${companyName}\nご担当者様\n\nお疲れ様です。${senderCompany}の${senderName}です。\n\n${companyName}様の${industry ? industry + '事業' : '事業'}において、「${pain2}」は現場レベルでも課題になっているのではないでしょうか。\n\n${serviceIntro}は、現場のオペレーションを効率化し、チーム全体の生産性を大幅に向上させるソリューションです。${serviceDescription ? '\n\n' + serviceDescription : ''}\n\n既存ね業務フローを大きく変えることなく導入いただけるため、現場への負担を最小限に抑えられます。\n\n15分程度の簡単なデモンストレーションで、具体的な効果をお示しできます。ご興味がございましたらお気軽にお声がけください。\n\nよろしくお願いいたします。`,
       targetPersona: 'manager',
       description: '現場責任者向け（効率化訴求）',
     },
@@ -197,8 +182,6 @@ function getSmartSubOutputs(
   research: CompanyResearch,
   settings: CustomSettings
 ): { phone_script?: string; video_prompt?: string; follow_up_scenarios?: string[] } {
-  research = research || ({} as CompanyResearch);
-  settings = settings || ({} as CustomSettings);
   const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '当サービス';
   const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '弊社';
   const industry = (research as any).industry || '';
@@ -209,8 +192,8 @@ function getSmartSubOutputs(
     video_prompt: `${industry ? industry + '業界で活躍する' : ''}${companyName}のオフィスをイメージした背景。テキストオーバーレイで「${pain1}を解決」と表示。${serviceName}のダッシュボード画面を映し、効率化のビフォーアフターを視覚的に表現。最後に「30分の無料相談」のCTAを表示。30秒、プロフェッショナルなトーン。`,
     follow_up_scenarios: [
       `【3日後・未返信時】件名：「先日のご提案の補足資料をお送りします」\n${companyName}様の${pain1}に関して、${industry ? industry + '業界の' : ''}導入事例資料をお送りします。ご参考になれば幸いです。`,
-      `【1週間後・未返信時】件名：「${companyName}様向けの無料診断のご案内」\n無料で業務効率診断を実施しております。現状の課題を可視化し、改善ポイントをレポートとしてお渡しします。`,
-      `【返信あり・関心あり】件名：「ご返信ありがとうございます｜日程調整のご相談」\nご関心をいただきありがとうございます。具体的なデモと事例紹介を30分でご説明させてください。以下の日程でご都合はいかがでしょうか。`,
+      `【1週間後・未返信時】件名：「${companyName}様向けの無料診断のご案内」\n無料で業留効率診断を実施しております。現状の課題を可視化し、改善ポイントをレポートとしてお渡しします。`,
+      `【返信あり・関心あり】件名：「ご返信ありがとうございます｜日程調整のご矺談」\nご関心をいただきありがとうございます。具体的なデモと事例紹介を30分でご説明させてください。以下の日程でご都合はいかがでしょうか。`,
     ],
   };
 }
@@ -231,38 +214,46 @@ export class GeminiService {
   }): Promise<EmailPattern[]> {
     const {
       companyName,
-      research: rawResearch,
-      settings: rawSettings,
+      research,
+      settings,
       persona = 'executive',
       sourceType = 'web',
       ctaType = 'call',
       newsIdx = 0,
       freeText = '',
     } = params;
-    const research = rawResearch || ({} as CompanyResearch);
-    const settings = rawSettings || ({} as CustomSettings);
 
     try {
       const personaInstructions: Record<string, string> = {
-        executive: '経営層向けのメール。ROI（投資対効果）と事業成長に焦点を当てる。数字や具体的な成果を強調する。',
-        manager: '現場責任者向けのメール。業務効率化とプロセス改善に焦点を当てる。運用負荷軽減を強調する。',
-        staff: '担当者向けのメール。個人の業務時間削減と作業効率化に焦点を当てる。日々の工数削減を強調する。',
+        executive:
+          '経営層向けのメール。ROI（投資対効果）と事業成長に焦点を当てる。数字や具体的な成果を強調する。',
+        manager:
+          '現場責任者向けのメール。業留効率化とプロセス改善に焦点を当てる。運用負荷軽減を強調する。',
+        staff:
+          '担当者向けのメール。個人の業務時間削減と作業効率化に焦点を当てる。日々の工数削減を強調する。',
       };
 
       const ctaInstructions: Record<string, string> = {
         call: 'CTA（行動喚起）は電話でのご相談を促す。30分の無料相談を提案する。',
-        demo: 'CTA（行動喚起）は製品デモンストレーションへの参加を促す。簡単なデモ申し込みリンクを提案する。',
+        demo: 'CTA（行動喚起）は製品デモンストレーションへの参加を促す。簡単なデモ畸ま込みリンクを提案する。',
         meeting: 'CTA（行動喚起）はカレンダー予約ツール（Calendly等）を使用した時間設定を促す。',
-        resource: 'CTA（行動喚起）は関連リソースや資料ダウンロードを促す。価値のあるホワイトペーパーや業界レポートを提案する。',
+        resource:
+          'CTA（行動喚起）は関連リソースや資料ダウンロードを促す。価値のあるホワイトペーパーや業界レポートを提案する。',
       };
 
-      const selectedPersonaInstructions = personaInstructions[persona] || personaInstructions.executive;
-      const selectedCtaInstructions = ctaInstructions[ctaType] || ctaInstructions.call;
-      const newsContext = research.news && research.news.length > newsIdx
-        ? `参考情報：${research.news[newsIdx].title}`
-        : '';
+      const selectedPersonaInstructions =
+        personaInstructions[persona] || personaInstructions.executive;
+      const selectedCtaInstructions =
+        ctaInstructions[ctaType] || ctaInstructions.call;
+
+      const newsContext =
+        research.news && research.news.length > newsIdx
+          ? `参考情報：${research.news[newsIdx].title}`
+          : '';
+
       const painPoints = research.pains?.slice(0, 3).join('、') || '';
 
+      // Access settings with database field names (snake_case)
       const senderName = (settings as any).sender_name || settings.senderName || '';
       const senderTitle = (settings as any).sender_title || settings.senderTitle || '';
       const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '';
@@ -271,7 +262,7 @@ export class GeminiService {
       const serviceBenefit = (settings as any).service_benefit || settings.serviceInfo?.strengths?.join('、') || '';
       const tone = (settings as any).tone || settings.promptSettings?.tone || 'プロフェッショナルで親しみやすい';
 
-      const prompt = `あなたは日本のインサイドセールス(IS)メール作成の専門家です。高度に個別化されたセールスメールを作成します。
+      const prompt = `あなたは日本のインサイドセールス(IS)メール作成の専門家です。リサーチした企業情報を徹底的に活用し、「この企業のことをよく調べている」と感じさせる、高度に個別化されたセールスメールを作成します。
 
 【送信者情報】
 氏名：${senderName}
@@ -281,17 +272,17 @@ export class GeminiService {
 【提供サービス】
 サービス名：${serviceName}
 説明：${serviceDescription}
-利点：${serviceBenefit}
+利点・強み：${serviceBenefit}
 
-【送信先企業の調査情報】
+【送信先企業のリサーチ結果】
 会社名：${companyName}
 業界：${(research as any).industry || '不明'}
-事業段階：${(research as any).stage || '不明'}
+事業竹隖：${(research as any).stage || '不明'}
 従業員数：${(research as any).employees || (research as any).employeeCount || '不明'}
 事業内容：${(research as any).business || (research as any).businessDescription || ''}
-概要：${(research as any).overview || ''}
-${companyName}が直面する経営・業務課題（※顧客の課題ではなく、${companyName}自体の課題）：${painPoints}
-${newsContext ? `最新情報：${newsContext}` : ''}
+企業概要：${(research as any).overview || ''}
+${companyName}が直面する経営・業務課題（※顣客の課題ではなく、${companyName}自体の課題）：${painPoints}
+${newsContext ? `最新ニュース：${newsContext}` : ''}
 
 【ペルソナ指定】
 ${selectedPersonaInstructions}
@@ -305,157 +296,250 @@ ${tone}
 【追加カスタマイズ】
 ${freeText || 'なし'}
 
+■ 重要な作成ルール：
+1. 【個別感の徹底】各メールの冒頭〜中盤で、${companyName}の事業内容・業界・最新ニュースなど、リサーチ結果から得た具体的情報に必ず言及すること。テンプレート感のある汎用表現は絶対に避ける。
+2. 【課題→サービスのブリッジ】${companyName}のリサーチから判明した具体的な状況・課題を踏まえた上で、「その課題に対して${serviceName || '弊社サービス'}がどう貢献できるか」を自然な流れで要約して提示すること。単にサービス紹介するのではなく、「御社の〇〇という状況に対して、□□という形で貢献できます」という構成にする。
+3. 【具体性】「業留効率化」「コスト削減」など抽象的な表現ではなく、${companyName}の事業に即した具体的な効果・メリットを記載する。
+4. 【ニュース活用】最新ニュースがある場合は、自然な形でアイスブレイクに活用する。
+
 以下の4つのメールパターンを日本語で作成してください：
-1. Pattern A - 経営層向け（ROI訴求）：CEOやCFO向け。投資対効果と事業成長を前面に。業績向上への具体的な貢献を示す。
-2. Pattern B - 現場責任者向け（効率化訴求）：部門長向け。業務効率化とプロセス改善を前面に。チームの生産性向上を示す。
-3. Pattern C - 担当者向け（時短訴求）：実務者向け。個人の時間削減と作業効率化を前面に。日々の工数削減を示す。
-4. Pattern D - 短文ストレート型：簡潔で直接的。20-30秒で読める長さ。要点のみ。
+
+1. Pattern A - 経営層向け（ROI訴求）：CEOやCFO向け。${companyName}の経営課題に直結するROI・事業インパクトを数値で示す。
+2. Pattern B - 現場責任者向け（効率化訴求）：部門長向け。${companyName}の現場オペレーションの効率化を具体的に提案。
+3. Pattern C - 担当者向け（時短訴求）：実務者向け。${companyName}の担当者の日常業務における具体的な時短効果を示す。
+4. Pattern D - 短文ストレート型：簡潔で直接的。${companyName}の状況を踏まえた上で20-30秒で読める長さにまとめる。
 
 各パターンについて、以下の形式で出力してください：
 [PATTERN_A]
 件名：＿＿＿＿＿＿＿＿＿
 本文：＿＿＿＿＿＿＿＿＿
+
 [PATTERN_B]
 件名：＿＿＿＿＿＿＿＿＿
 本文：＿＿＿＿＿＿＿＿＿
+
 [PATTERN_C]
 件名：＿＿＿＿＿＿＿＿＿
 本文：＿＿＿＿＿＿＿＿＿
+
 [PATTERN_D]
 件名：＿＿＿＿＿＿＿＿＿
 本文：＿＿＿＿＿＿＿＿＿`;
 
+      // Stage 1 & 2: Try AI providers
       const responseText = await callAI(prompt);
       return this.parseEmailPatterns(responseText, companyName, research, settings);
     } catch (error) {
+      // Stage 3: Smart template fallback
       console.warn('[AI] All providers failed, using smart templates:', (error as Error).message);
       return getSmartEmailPatterns(companyName, research, settings);
     }
   }
 
-  async generateSubOutputs(params: {
-    companyName: string;
-    research: CompanyResearch;
-    settings: CustomSettings;
-    selectedPattern?: string;
-  }): Promise<{ phone_script?: string; video_prompt?: string; follow_up_scenarios?: string[] }> {
-    const { companyName, research: rawResearch, settings: rawSettings, selectedPattern } = params;
-    const research = rawResearch || ({} as CompanyResearch);
-    const settings = rawSettings || ({} as CustomSettings);
-
+  async generateSubOutputs(
+    companyName: string,
+    research: CompanyResearch,
+    settings: CustomSettings
+  ): Promise<{
+    phone_script?: string;
+    video_prompt?: string;
+    follow_up_scenarios?: string[];
+  }> {
     try {
-      const senderName = (settings as any).sender_name || settings.senderName || '';
-      const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '';
       const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '';
       const serviceDescription = (settings as any).service_description || settings.serviceInfo?.description || '';
-      const industry = (research as any).industry || '';
-      const painPoints = research.pains?.slice(0, 3).join('、') || '';
 
-      const prompt = `あなたは日本のセールスメール作成とフォローアップの専門家です。
+      const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '';
+      const senderName = (settings as any).sender_name || settings.senderName || '';
+      const serviceBenefit = (settings as any).service_benefit || settings.serviceInfo?.strengths?.join('、') || '';
+      const painPoints = (research as any).pains?.slice(0, 3).join('、') || research.painPoints?.slice(0, 3).join('、') || '';
+      const overview = (research as any).overview || '';
+      const business = (research as any).business || (research as any).businessDescription || '';
 
-【送信者情報】
-氏名：${senderName}
-会社：${senderCompany}
+      const prompt = `あなたはインサイドセールス(IS)の総合サポートアシスタントです。リサーチ情報を最大限活用し、${companyName}に特化した個別感のあるコンテンツを作成してください。
 
-【送信先企業】
+【送信先企業のリサーチ結果】
 会社名：${companyName}
-業界：${industry}
-課題：${painPoints}
+業界：${(research as any).industry || '不明'}
+企業概要：${overview}
+事業内容：${business}
+${companyName}が直面する課題：${painPoints}
 
-【サービス情報】
+【送信元情報】
+会社名：${senderCompany}
+担当者名：${senderName}
 サービス名：${serviceName}
-説明：${serviceDescription}
+サービス説明：${serviceDescription}
+サービスの強み：${serviceBenefit}
 
-【選択されたパターン】
-${selectedPattern || 'Pattern A'}
+■ 重要ルール：
+- 各コンテンツで${companyName}の事業内容・業界・課題に具体的に言及すること
+- ${companyName}の状況に対して${serviceName || '弊社サービス'}がとう쏮献できるかを自然にブリッジすること
+- テンプレート感のある汎用表現は避け、${companyName}専用に書かれたと感じる内容にすること
 
-以下の3つの補助出力を日本語で作成してください：
+以下の3つのコンテンツを作成してください：
 
-1. **電話スクリプト**：メール送信後の電話フォローアップ用のスクリプト。30-50秒で話せる内容。自然で、相手に圧迫感を与えない。
+1. 電話スクリプト：メール送付後のフォロー電話用。${companyName}の具体的な課題に触れながら、30秒で関心を引く内容。
+2. ビデオプロンプト：Sora等の動画生成AIで使用。${companyName}の業界・事業をイメージした30秒パーソナライズ動画のプロンプト。
+3. フォローアップシナリオ：${companyName}の状況に応した3パターン（3日後未返信/1週間後未返信/返信あり）のフォローアップメール。
 
-2. **動画スクリプト**：LinkedIn動画やYouTube短編用のビジュアル・ナレーション指示。30秒程度。${companyName}と${serviceName}に特化した内容。
-
-3. **フォローアップシナリオ**：メール未返信時のフォローアップメール（3日後、1週間後）と、返信来訪時のメール。各シナリオについて、件名と簡潔な本文を提供。
-
-以下の形式で出力してください：
+以下の形式で出力：
 [PHONE_SCRIPT]
-＿＿＿＿＿＿＿＿＿
+＿＿＿＿＿＿＿
 
 [VIDEO_PROMPT]
-＿＿＿＿＿＿＿＿＿
+＿＿＿＿＿＿＿
 
-[FOLLOW_UP_SCENARIOS]
-＿＿＿＿＿＿＿＿＿`;
+[FOLLOWUP_SCENARIO_1]
+＿＿＿＿＿＿＿
+
+[FOLLOWUP_SCENARIO_2]
+＿＿＿＿＿＿＿
+
+[FOLLOWUP_SCENARIO_3]
+＿＿＿＿＿＿＿`;
 
       const responseText = await callAI(prompt);
-      return this.parseSubOutputs(responseText);
+
+      const phoneScriptMatch = responseText.match(/\[PHONE_SCRIPT\]([\s\S]*?)(?=\[|$)/);
+      const videoPromptMatch = responseText.match(/\[VIDEO_PROMPT\]([\s\S]*?)(?=\[|$)/);
+      const followupMatches = responseText.match(/\[FOLLOWUP_SCENARIO_\d\]([\s\S]*?)(?=\[|$)/g);
+
+      return {
+        phone_script: phoneScriptMatch ? phoneScriptMatch[1].trim() : undefined,
+        video_prompt: videoPromptMatch ? videoPromptMatch[1].trim() : undefined,
+        follow_up_scenarios: followupMatches
+          ? followupMatches.map((m) => m.replace(/\[FOLLOWUP_SCENARIO_\d\]/, '').trim())
+          : undefined,
+      };
     } catch (error) {
-      console.warn('[AI] Sub-outputs generation failed, using smart templates:', (error as Error).message);
+      // Stage 3: Smart sub-output fallback
+      console.warn('[AI] Sub-output generation failed, using smart templates:', (error as Error).message);
       return getSmartSubOutputs(companyName, research, settings);
     }
   }
 
-  async analyzeResearch(params: {
-    companyName: string;
-    research: CompanyResearch;
-  }): Promise<{ summary: string; keyInsights: string[] }> {
-    const { companyName, research: rawResearch } = params;
-    const research = rawResearch || ({} as CompanyResearch);
-
+  async analyzeResearch(
+    companyName: string,
+    scrapedContent: string,
+    newsArticles: string[],
+    searchUrls?: Array<{ title: string; url: string }>
+  ): Promise<CompanyResearch> {
     try {
-      const industry = (research as any).industry || '';
-      const painPoints = research.pains?.slice(0, 3) || [];
-      const employees = (research as any).employees || (research as any).employeeCount || '';
-      const business = (research as any).business || '';
-      const news = research.news?.slice(0, 3).map((n) => n.title).join('、') || '';
+      const newsContext = newsArticles.slice(0, 10).join('\n');
+      const urlContext = searchUrls
+        ? searchUrls.map((u) => `${u.title}: ${u.url}`).join('\n')
+        : '';
 
-      const prompt = `${companyName}について、以下の情報が与えられています。
+      const prompt = `あなたはインサイドセールス（IS）のリサーチアナリストです。以下の企業について営業アプローチのための調査分析を行ってください。
 
-【基本情報】
-業界：${industry}
-従業員数：${employees}
-事業内容：${business}
+企業名：${companyName}
 
-【課題】
-${painPoints.join('\n')}
+【スクレイプ内容】
+${scrapedContent.substring(0, 5000)}
 
-【最新ニュース】
-${news}
+【ニュース記事】
+${newsContext}
 
-この企業について、インサイドセールスの観点から3-4つのキーインサイトを生成してください。各インサイトは1-2文で、アクショナブルで具体的である必要があります。
+${urlContext ? `【検索結果URL】\n${urlContext}` : ''}
 
-形式：
-[KEY_INSIGHT_1]
-＿＿＿＿＿＿＿＿＿
+以下の情報を抽出して、JSON形式で出力してください。
 
-[KEY_INSIGHT_2]
-＿＿＿＿＿＿＿＿＿
+■ URL出力に関する重要ルール：
+1. homepage_url: 企業の公式HP（コーポレートサイト）のURLを必ず出力してください。検索結果URLから企業HPを特定するか、「https://www.{企業ドメイン}.co.jp」等の一般的なURLパターンから推測してください。
+2. business_url: 企業の事業・サービス・製品紹介ページのURLを必ず出力してください。検索結果URLから「/services」「/products」「/business」「/solutions」等のページを探してください。見つからない場合はhomepage_urlと同じURLを入れてください。
+3. ニュース(news)の各項目にはurlを必ず含めてください。検索結果URLからニュース記事のURLを特定してください。
 
-[KEY_INSIGHT_3]
-＿＿＿＿＿＿＿＿＿`;
+■ ニュース出力に関する重要ルール：
+- newsは【必ず5件以上】出力してください。これは絶対条件です。
+- 各ニュースにはtitle, summary, url, dateの4項目を含めてください。
+- 検索結果からニュースを5件以上抽出できない場合は、企業の業界動向、プレスリリース、IR情報、採用情報なども含めて5件以上にしてください。
+- 各ニュースのurlには実際の記事URLを入れてください。URLが不明な場合はhomepage_urlのnewsページやpress等のURLを推測して入れてください。
+
+■ 最重要注意事項：「pains」について ※ここを間違えると意味のない出力になります
+「pains」には【${companyName}という企業自体が組織として直面していると推測される経営課題・業留課題】を記載してください。
+ ★ よくある間違い（絶対に避けること）：
+${companyName}が「サービスを提供している企業」の場合、${companyName}の顧客が抱える課題を書いてしまうケースがあります。
+例えば${companyName}がHRテックサービスを提供している場合、「採用業務の非劺率」は${companyName}の顧客の課題であり、${companyName}自身の課題ではありません。
+
+★ 正しい「pains」の考え方：
+${companyName}の中の人（経営者・従業員）が日々の事業運営で困っていることは何か？を考えてください。
+- 事業成長に伴う組織拡大の課題（採用難、組織文化の維持、マネジメント体制）
+- 競合環境の変化への対応（新規参入者、価格競争、技術革新への追従）
+- 事業拡大の壁（新規市場開拓、海外展開、顧客単価向上、チャーン防止）
+- 社内オペレーションの課題（部門間連携、レガシーシステム、データ活用）
+- 収益構造の課題（利益率改善、コスト構造の最適化、投資判断）
+など、${companyName}の業界・規模・事業段階・ビジネスモデルに応じた具体的な課題を5つ挙げてください。
+
+{
+  "company_name": "企業名",
+  "overview": "企業の概要説明（2-3文）",
+  "business": "主要な事業内容の詳細説明（3-5文）",
+  "industry": "業界名",
+  "stage": "事業段階（スタートアップ/成長期/成熟期など）",
+  "employees": "従業員数（数値のみ、不明な場合はnull）",
+  "homepage_url": "企業の公式ホームページURL（必須。不明でも推測して出力）",
+  "business_url": "企業の事業・サービス・製品紹介ページURL（必須。不明な場合はhomepage_urlと同じ）",
+  "news": [{"title": "ニュースタイトル", "summary": "要約（1文）", "url": "ニュース記事のURL（必須）", "date": "日付（あれば）"}],
+  "pains": ["${companyName}自体が直面する経営課題1", "${companyName}自体が直面する業務課題2", "課題3", "課題4", "課題5"],
+  "hypothesis": "このサービスが${companyName}の上記課題解決に役立つと思われる仮説（1-2文）"
+}
+
+【再確認】
+- homepage_url, business_url は必ず有効なURLを出力（空文字不可）
+- newsは必ず5件以上（各項目にurl必須）`;
 
       const responseText = await callAI(prompt);
-      const insights = this.parseKeyInsights(responseText);
+
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          company_name: parsed.company_name || companyName,
+          overview: parsed.overview,
+          business: parsed.business,
+          industry: parsed.industry,
+          stage: parsed.stage,
+          employees: parsed.employees,
+          homepage_url: parsed.homepage_url || '',
+          business_url: parsed.business_url || '',
+          news: (parsed.news || []).map((n: any, idx: number) => ({
+            title: n.title || '',
+            summary: n.summary || '',
+            url: n.url || '',
+            date: n.date || '',
+          })),
+          pains: parsed.pains || [],
+          hypothesis: parsed.hypothesis,
+          scraped_at: new Date().toISOString(),
+        };
+      }
 
       return {
-        summary: `${companyName}は${industry}業界で展開する企業です。${painPoints[0]}などが主要な課題となっており、今後の事業成長に向けて解決が急務と考えられます。`,
-        keyInsights: insights,
+        company_name: companyName,
+        news: [],
+        pains: [],
+        scraped_at: new Date().toISOString(),
       };
     } catch (error) {
-      console.warn('[AI] Research analysis failed:', (error as Error).message);
+      console.error('Error analyzing research:', error);
       return {
-        summary: `${companyName}について詳しい分析ができませんでした。`,
-        keyInsights: [],
+        company_name: companyName,
+        news: [],
+        pains: [],
+        scraped_at: new Date().toISOString(),
       };
     }
   }
 
   private parseEmailPatterns(
     responseText: string,
-    companyName: string,
-    research: CompanyResearch,
-    settings: CustomSettings
+    companyName?: string,
+    research?: CompanyResearch,
+    settings?: CustomSettings
   ): EmailPattern[] {
+    const patterns: EmailPattern[] = [];
+
     const patternNames = [
       { key: 'PATTERN_A', name: '経営層向け（ROI訴求）' },
       { key: 'PATTERN_B', name: '現場責任者向け（効率化訴求）' },
@@ -463,122 +547,64 @@ ${news}
       { key: 'PATTERN_D', name: '短文ストレート型' },
     ];
 
-    const extractPattern = (text: string, patternKey: string): { subject: string; body: string } => {
-      const regex = new RegExp(`\\[${patternKey}\\](.*?)(?=\\[|$)`, 's');
-      const match = text.match(regex);
-      if (!match) return { subject: '', body: '' };
+    for (const { key, name } of patternNames) {
+      const patternRegex = new RegExp(`\\[${key}\\]([\\s\\S]*?)(?=\\[PATTERN_|$)`, 'i');
+      const match = responseText.match(patternRegex);
 
-      const content = match[1];
-      const subjectMatch = content.match(/件名：\s*(.+?)(?:\n|本文)/);
-      const bodyMatch = content.match(/本文：\s*([\s\S]+?)$/);
+      if (match) {
+        const content = match[1].trim();
+        const subjectMatch = content.match(/件名[：:]\s*(.+?)(?:\n|$)/);
+        const bodyMatch = content.match(/本文[：:]\s*([\s\S]+?)$/);
 
-      return {
-        subject: subjectMatch ? subjectMatch[1].trim() : '',
-        body: bodyMatch ? bodyMatch[1].trim() : '',
-      };
-    };
+        if (subjectMatch && bodyMatch) {
+          patterns.push({
+            patternName: name,
+            subject: subjectMatch[1].trim(),
+            body: bodyMatch[1].trim(),
+            targetPersona: name,
+            description: name,
+          });
+        }
+      }
+    }
 
-    const patterns = patternNames.map((pattern) => {
-      const extracted = extractPattern(responseText, pattern.key);
-      return {
-        patternName: pattern.name,
-        subject: extracted.subject || `${companyName}様へのご提案`,
-        body: extracted.body || 'ボディ取得に失敗しました',
-        targetPersona: pattern.key.toLowerCase().replace('pattern_', ''),
-        description: pattern.name,
-      };
-    });
+    if (patterns.length === 0) {
+      // If AI returned something but it couldn't be parsed, use smart templates
+      if (companyName && research && settings) {
+        return getSmartEmailPatterns(companyName, research, settings);
+      }
+      return this.getLegacyFallbackPatterns();
+    }
 
     return patterns.length >= 4 ? patterns.slice(0, 4) : patterns;
   }
 
-  private parseSubOutputs(responseText: string): {
-    phone_script?: string;
-    video_prompt?: string;
-    follow_up_scenarios?: string[];
-  } {
-    const phoneMatch = responseText.match(/\[PHONE_SCRIPT\](.*?)(?=\[|$)/s);
-    const videoMatch = responseText.match(/\[VIDEO_PROMPT\](.*?)(?=\[|$)/s);
-    const followUpMatch = responseText.match(/\[FOLLOW_UP_SCENARIOS\](.*?)$/s);
-
-    const phoneScript = phoneMatch ? phoneMatch[1].trim() : undefined;
-    const videoPrompt = videoMatch ? videoMatch[1].trim() : undefined;
-
-    let followUpScenarios: string[] = [];
-    if (followUpMatch) {
-      const scenarios = followUpMatch[1]
-        .split(/\n(?=【|\d\.)/g)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      followUpScenarios = scenarios;
-    }
-
-    return {
-      phone_script: phoneScript,
-      video_prompt: videoPrompt,
-      follow_up_scenarios: followUpScenarios.length > 0 ? followUpScenarios : undefined,
-    };
-  }
-
-  private parseKeyInsights(responseText: string): string[] {
-    const insights: string[] = [];
-    const insightRegex = /\[KEY_INSIGHT_\d+\]\s*([\s\S]*?)(?=\[KEY_INSIGHT_\d+\]|$)/g;
-    let match;
-
-    while ((match = insightRegex.exec(responseText)) !== null) {
-      const insight = match[1].trim();
-      if (insight.length > 0) {
-        insights.push(insight);
-      }
-    }
-
-    return insights;
-  }
-
-  private getLegacyFallbackPatterns(
-    companyName: string,
-    research: CompanyResearch,
-    settings: CustomSettings
-  ): EmailPattern[] {
-    research = research || ({} as CompanyResearch);
-    settings = settings || ({} as CustomSettings);
-    const senderName = (settings as any).sender_name || settings.senderName || 'ご担当';
-    const senderCompany = (settings as any).sender_company || settings.senderCompany || settings.company || '弊社';
-    const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '当サービス';
-    const industry = (research as any).industry || '';
-    const painPoints = research.pains?.slice(0, 3) || [];
-    const pain1 = painPoints[0] || '業務改善';
-    const pain2 = painPoints[1] || '効率化';
-    const pain3 = painPoints[2] || 'コスト削減';
-
+  // Legacy fallback (only used if no research/settings context available)
+  private getLegacyFallbackPatterns(): EmailPattern[] {
     return [
       {
         patternName: '経営層向け（ROI訴求）',
-        subject: `${companyName}様の経営課題に関するご提案`,
-        body: `${companyName}\nご担当者様\n\nお世話になっております。${senderCompany}の${senderName}です。\n\n${companyName}様の${pain1}について、具体的なご提案がございます。\n\n${serviceName}は、多くの企業様で20-30%の効率改善を実現しています。\n\n30分のご面談で、貴社への適用イメージをご説明させていただけます。\n\nご検討ください。`,
+        subject: '貴社の業績向上について - 実績ベースのご提案',
+        body: 'いつもお世話になっております。\n\n事業成長に向けた具体的なソリューションについてご案内させていただきたく、ご連絡いたしました。\n\n多くの業界企業様で導入実績がある当サービスは、業務効率化を通じた売上拡大に貢献いたします。\n\nぜひ一度、30分程度のお時間をいただき、詳しくご説明させていただきたいのですが、いかがでしょうか。\n\nよろしくお願いいたします。',
         targetPersona: 'executive',
-        description: '経営層向け（ROI訴求）',
       },
       {
         patternName: '現場責任者向け（効率化訴求）',
-        subject: `${pain2}を実現するソリューションのご紹介`,
-        body: `${companyName}\nご担当者様\n\nお疲れ様です。${senderCompany}の${senderName}です。\n\n${companyName}様の現場で「${pain2}」が重要テーマになっているのではないでしょうか。\n\n${serviceName}は、プロセス改善を通じて、チーム全体の生産性を向上させます。\n\nデモンストレーションをご希望でしたら、お気軽にお声がけください。`,
+        subject: 'チーム生産性向上のための新しいアプローチ',
+        body: 'いつもお疲れ様です。\n\nチームの業務効率化について、新しいソリューションをご紹介したいとご連絡いたしました。\n\n当サービスは、現場責任者様のチーム運用を大幅に効率化し、より戦略的な業務に時間を割くことができるようになります。\n\n短時間のデモンストレーションで、具体的な効果をお示しできます。\n\nご検討ください。',
         targetPersona: 'manager',
-        description: '現場責任者向け（効率化訴求）',
       },
       {
         patternName: '担当者向け（時短訴求）',
-        subject: `日々の業務負担を軽減する方法`,
-        body: `${companyName}\nご担当者様\n\nお疲れ様です。${senderCompany}の${senderName}です。\n\n手動業務に時間を取られていませんか？\n\n${serviceName}は、定型業務の自動化により、1日あたり約1時間の削減が可能です。\n\n無料トライアルのご案内もございます。`,
+        subject: '日々の業務を1時間短縮する方法',
+        body: 'お疲れ様です。\n\n毎日の業務を効率化するツールをご紹介いたします。\n\n当サービスを導入いただくと、日々の定型業務を自動化でき、1日あたり1時間程度の時間短縮が可能です。\n\nその時間を、より価値のある業務に充てることができます。\n\n簡単なデモを体験いただけます。いかがでしょうか？',
         targetPersona: 'staff',
-        description: '担当者向け（時短訴求）',
       },
       {
         patternName: '短文ストレート型',
-        subject: `${serviceName}のご紹介`,
-        body: `${companyName}\nご担当者様\n\nお世話になっております。${senderCompany}の${senderName}です。\n\n${companyName}様の「${pain1}」に貢献するサービスをご紹介します。\n\n30分の面談で、具体的なメリットをお伝え可能です。\n\nご検討をお願いいたします。`,
+        subject: '新サービスのご紹介',
+        body: 'お疲れ様です。\n\n業留効率化の新しいツールをご紹介させていただきたく、ご連絡いたしました。\n\n無料でお試しいただけますので、ぜひご検討ください。\n\nよろしくお願いいたします。',
         targetPersona: 'general',
-        description: '短文ストレート型',
       },
     ];
   }
