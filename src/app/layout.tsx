@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { getServerSession } from 'next-auth/next'
-import { SessionProvider } from 'next-auth/react'
-import { Toaster } from 'react-hot-toast'
+import { authOptions } from '@/lib/auth-options'
+import Providers from './providers'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -14,15 +14,14 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  const session = await getServerSession()
+  const session = await getServerSession(authOptions)
 
   return (
     <html lang="ja">
       <body>
-        <SessionProvider session={session}>
+        <Providers session={session}>
           {children}
-          <Toaster position="top-right" />
-        </SessionProvider>
+        </Providers>
       </body>
     </html>
   )

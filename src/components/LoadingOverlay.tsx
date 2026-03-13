@@ -2,22 +2,30 @@
 
 import { useEffect, useState } from 'react'
 
-const steps = [
+const defaultSteps = [
   '企業情報を分析中...',
   'ニュースを収集中...',
   '課題を特定中...',
   'メールを生成中...',
 ]
 
-export function LoadingOverlay() {
+interface LoadingOverlayProps {
+  progressMessage?: string | null
+}
+
+export function LoadingOverlay({ progressMessage }: LoadingOverlayProps) {
   const [currentStep, setCurrentStep] = useState(0)
 
+  // If we have a real progress message, show it. Otherwise, cycle through defaults.
   useEffect(() => {
+    if (progressMessage) return // Don't cycle when we have real progress
     const interval = setInterval(() => {
-      setCurrentStep((prev) => (prev + 1) % steps.length)
+      setCurrentStep((prev) => (prev + 1) % defaultSteps.length)
     }, 1500)
     return () => clearInterval(interval)
-  }, [])
+  }, [progressMessage])
+
+  const displayMessage = progressMessage || defaultSteps[currentStep]
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
@@ -31,32 +39,19 @@ export function LoadingOverlay() {
             </div>
           </div>
 
-          {/* Steps */}
-          <div className="space-y-3">
-            {steps.map((step, index) => (
-              <div
-                key={index}
-                className={`transition-all duration-300 ${
-                  index === currentStep
-                    ? 'text-blue-400 font-semibold scale-105'
-                    : index < currentStep
-                    ? 'text-slate-400 line-through'
-                    : 'text-slate-500'
-                }`}
-              >
-                <div className="flex items-center space-x-2">
-                  <span className="inline-block w-2 h-2 rounded-full bg-current" />
-                  <span>{step}</span>
-                </div>
-              </div>
-            ))}
+          {/* Current step message */}
+          <div className="text-blue-400 font-semibold text-lg transition-all duration-300">
+            {displayMessage}
           </div>
 
-          {/* Progress bar */}
+          {/* Progress bar (animated) */}
           <div className="w-full bg-slate-700 rounded-full h-1">
             <div
-              className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
-              style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+              className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-1000"
+              style={{
+                width: progressMessage ? '80%' : `${((currentStep + 1) / defaultSteps.length) * 100}%`,
+                animation: progressMessage ? 'none' : undefined,
+              }}
             />
           </div>
         </div>

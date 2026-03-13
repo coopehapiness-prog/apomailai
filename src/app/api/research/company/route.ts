@@ -11,7 +11,7 @@ const ResearchCompanySchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = authenticateRequest(request);
+    const userId = await authenticateRequest(request);
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

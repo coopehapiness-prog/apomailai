@@ -14,7 +14,7 @@ function categorizeFactor(
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = authenticateRequest(request);
+    const userId = await authenticateRequest(request);
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

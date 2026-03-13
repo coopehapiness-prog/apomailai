@@ -7,6 +7,7 @@ export interface User {
 }
 
 export interface CustomSettings {
+  [key: string]: unknown
   id?: string
   user_id?: string
   sender_name: string
@@ -14,11 +15,13 @@ export interface CustomSettings {
   sender_company: string
   sender_email?: string
   sender_phone?: string
+  scheduling_url?: string
   service_name: string
   service_description: string
   service_benefit: string
   service_price?: string
   service_results?: string
+  case_studies?: string
   tone: string
   prompt?: string
   knowledge_base_ids?: string[]
@@ -61,7 +64,9 @@ export interface CompanyResearch {
   industry?: string
   stage?: string
   employees?: number | string
-  news: Array<{ title: string; summary?: string; url?: string; date?: string }>
+  homepage_url?: string
+  business_url?: string
+  news: Array<{ title: string; summary?: string; url?: string; date?: string; source?: string; type?: string }>
   pains: string[]
   hypothesis?: string
   scraped_at?: string
@@ -72,17 +77,29 @@ export interface CompanyResearch {
   latestNews?: Array<{ id: string; title: string; url?: string; date?: string; summary?: string }>
   painPoints?: string[]
   opportunities?: string[]
+  overviewUrl?: string
+  businessUrl?: string
 }
 
 export interface EmailGenRequest {
   companyName: string
   contactName?: string
   contactTitle?: string
+  contactDepartment?: string
   persona?: 'executive' | 'manager' | 'staff'
   sourceType?: 'web' | 'email' | 'call' | 'event'
+  source?: string
   ctaType?: 'call' | 'demo' | 'meeting' | 'resource'
   newsIdx?: number
   freeText?: string
+  history?: string
+  customization?: {
+    personas?: string[]
+    news?: string[]
+    cta?: string
+    freeText?: string
+    chips?: string[]
+  }
 }
 
 export interface EmailPattern {
@@ -91,6 +108,9 @@ export interface EmailPattern {
   body: string
   targetPersona?: string
   description?: string
+  phoneScript?: string
+  videoPrompt?: string
+  followUpScenarios?: string[]
 }
 
 export interface GeneratedEmail {

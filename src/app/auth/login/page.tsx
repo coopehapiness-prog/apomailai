@@ -18,19 +18,19 @@ export default function LoginPage() {
 
     try {
       if (isRegister) {
-        // Call register endpoint directly
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/auth/register`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
-          }
-        )
+        // Call internal Next.js register API route
+        const response = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        })
 
         if (!response.ok) {
           const error = await response.json().catch(() => ({}))
-          throw new Error(error.message || '登録に失敗しました')
+          if (response.status === 409) {
+            throw new Error('このメールアドレスはすでに登録済みです。ログインしてください。')
+          }
+          throw new Error(error.error || error.message || '登録に失敗しました')
         }
 
         toast.success('登録しました。ログインしてください')
@@ -50,7 +50,7 @@ export default function LoginPage() {
         }
 
         toast.success('ログインしました')
-        router.push('/dashboard/email')
+        window.location.href = '/dashboard/email'
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'エラーが発生しました'

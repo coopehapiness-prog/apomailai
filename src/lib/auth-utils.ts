@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-min-32-chars';
 const JWT_EXPIRES_IN = '7d';
@@ -29,18 +30,26 @@ export function verifyToken(token: string): { userId: string } | null {
   }
 }
 
-export function authenticateRequest(request: NextRequest): string | null {
+export async function authenticateRequest(request: NextRequest): Promise<string | null> {
   try {
+    // 1) Bearer token (API client / external calls)
     const authHeader = request.headers.get('authorization');
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return null;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      const decoded = verifyToken(token);
+      if (decoded?.userId) return decoded.userId;
     }
 
-    const token = authHeader.substring(7);
-    const decoded = verifyToken(token);
+    // 2) NextAuth session cookie (browser same-origin requests)
+    const nextAuthToken = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+    if (nextAuthToken?.userId) {
+      return nextAuthToken.userId as string;
+    }
 
-    return decoded?.userId || null;
+    return null;
   } catch (error) {
     return null;
   }
