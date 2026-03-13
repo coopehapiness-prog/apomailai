@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { geminiService } from '@/lib/gemini-service';
 import { researchService } from '@/lib/research-service';
 
+export const maxDuration = 300; // Requires Vercel Pro plan
+
 const GenerateEmailSchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
   persona: z

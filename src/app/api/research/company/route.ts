@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { authenticateRequest } from '@/lib/auth-utils';
 import { researchService } from '@/lib/research-service';
 
+export const maxDuration = 300; // Requires Vercel Pro plan
+
 const ResearchCompanySchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
 });
