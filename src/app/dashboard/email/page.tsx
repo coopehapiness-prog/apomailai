@@ -28,6 +28,7 @@ export default function EmailPage() {
     error,
     generate,
     regenerate,
+    reset,
   } = useEmailGeneration()
 
   const [formData, setFormData] = useState({
@@ -199,6 +200,7 @@ export default function EmailPage() {
         </div>
         <button
           onClick={() => {
+            reset()
             setFormData({ company: '', source: '', history: '' })
             setCustomization({
               personas: [],

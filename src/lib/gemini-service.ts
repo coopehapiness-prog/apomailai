@@ -1,12 +1,11 @@
 import { CompanyResearch, CustomSettings, EmailPattern } from './types';
 
 const CLOUD_RUN_URL = process.env.CLOUD_RUN_URL || 'https://gemini-generate-fn-513563150820.asia-northeast1.run.app';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
 
 /**
- * Call the existing Cloud Run endpoint for Gemini API
- * Endpoint: POST {CLOUD_RUN_URL}
- * Request: { prompt: string }
- * Response: { ok: boolean, result: string }
+ * Stage 1: Call Cloud Run endpoint (25s timeout)
  */
 async function callCloudRun(prompt: string): Promise<string> {
   const url = CLOUD_RUN_URL;
@@ -14,22 +13,111 @@ async function callCloudRun(prompt: string): Promise<string> {
     throw new Error('CLOUD_RUN_URL is not configured');
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-  if (!response.ok) {
-    throw new Error(`Cloud Run returned ${response.status}: ${response.statusText}`);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Cloud Run returned ${response.status}: ${response.statusText}`);
+    }
+
+    const json = (await response.json()) as { ok?: boolean; result?: string };
+    if (!json.ok || !json.result) {
+      throw new Error('Cloud Run returned an error or empty result');
+    }
+
+    return json.result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+/**
+ * Stage 2: Call Gemini API directly (30s timeout)
+ */
+async function callGeminiDirect(prompt: string): Promise<string> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured');
   }
 
-  const json = (await response.json()) as { ok?: boolean; result?: string };
-  if (!json.ok || !json.result) {
-    throw new Error('Cloud Run returned an error or empty result');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 8192,
+        },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`Gemini API returned ${response.status}: ${errorText.substring(0, 200)}`);
+    }
+
+    const json = await response.json();
+    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      throw new Error('Gemini API returned empty content');
+    }
+    return text;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+/**
+ * Call AI with retry logic: Cloud Run → Gemini Direct → retry once
+ */
+async function callAI(prompt: string): Promise<string> {
+  const maxRetries = 2;
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    if (attempt > 1) {
+      console.log(`[AI] Retry attempt ${attempt}/${maxRetries} after 2s delay...`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    // Stage 1: Try Cloud Run
+    try {
+      const result = await callAI(prompt);
+      return result;
+    } catch (cloudRunError) {
+      lastError = `Cloud Run: ${(cloudRunError as Error).message}`;
+      console.warn(`[AI] Cloud Run failed (attempt ${attempt}): ${lastError}`);
+    }
+
+    // Stage 2: Try Gemini API Direct
+    try {
+      const result = await callGeminiDirect(prompt);
+      return result;
+    } catch (geminiError) {
+      lastError = `Gemini Direct: ${(geminiError as Error).message}`;
+      console.warn(`[AI] Gemini Direct failed (attempt ${attempt}): ${lastError}`);
+    }
   }
 
-  return json.result;
+  throw new Error(`All AI providers failed after ${maxRetries} attempts. Last error: ${lastError}`);
 }
 
 export class GeminiService {
@@ -156,7 +244,7 @@ ${freeText || 'なし'}
 件名：＿＿＿＿＿＿＿＿＿
 本文：＿＿＿＿＿＿＿＿＿`;
 
-      const responseText = await callCloudRun(prompt);
+      const responseText = await callAI(prompt);
       return this.parseEmailPatterns(responseText);
     } catch (error) {
       console.error('Error generating emails:', error);
@@ -239,7 +327,7 @@ ${news ? `最近のニュース：\n・${news}` : ''}
 [FOLLOWUP_SCENARIO_3]
 ＿＿＿＿＿＿＿`;
 
-      const responseText = await callCloudRun(prompt);
+      const responseText = await callAI(prompt);
 
       const phoneScriptMatch = responseText.match(/\[PHONE_SCRIPT\]([\s\S]*?)(?=\[FOLLOWUP|$)/);
       const followupMatches = responseText.match(/\[FOLLOWUP_SCENARIO_\d\]([\s\S]*?)(?=\[FOLLOWUP_SCENARIO_\d\]|\[|$)/g);
@@ -290,7 +378,7 @@ ${newsContext}
   "hypothesis": "このサービスが役に立つと思われる仮説（1文）"
 }`;
 
-      const responseText = await callCloudRun(prompt);
+      const responseText = await callAI(prompt);
 
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
