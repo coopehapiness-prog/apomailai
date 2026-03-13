@@ -580,6 +580,9 @@ export class ResearchService {
           path === '/corporate/about' ||
           path === '/company/about' ||
           path === '/company/overview' ||
+          path === '/company-info' ||
+          path === '/company-profile' ||
+          path === '/corporate-profile' ||
           /^\/[a-z]{2}\/?$/.test(path) // language prefix like /ja/
         );
       } catch {
@@ -876,6 +879,8 @@ export class ResearchService {
       '/jp/ja/about/', '/jp/ja/company/', '/jp/ja/corporate/',
       '/ja/about/', '/ja/company/', '/ja/corporate/',
       '/about/', '/company/', '/about', '/company', '/corporate/', '/corporate',
+      '/company-info', '/company-info/', '/about-us', '/about-us/',
+      '/company-profile', '/company-profile/', '/corporate-profile',
       '/jp/about/', '/jp/company/',
       '/en/about/', '/en/company/',
     ];
@@ -883,6 +888,7 @@ export class ResearchService {
       '/jp/ja/about/business-group/', '/jp/ja/business/', '/jp/ja/service/', '/jp/ja/services/', '/jp/ja/product/', '/jp/ja/products/',
       '/ja/business/', '/ja/service/', '/ja/services/', '/ja/product/', '/ja/products/',
       '/business/', '/service/', '/services/', '/product/', '/products/', '/solution/', '/solutions/',
+      '/service-info', '/service-info/', '/product-info', '/product-info/',
       '/jp/business/', '/jp/products/', '/jp/services/',
       '/en/business/', '/en/products/', '/en/services/',
     ];
@@ -948,6 +954,7 @@ export class ResearchService {
    * Validate homepage_url and business_url generated from Gemini knowledge (no Google Search API).
    * Gemini often fabricates URLs (e.g., bakuzan.jp for LayerX). Quick-check each URL
    * and replace invalid ones with a Google Search fallback.
+   * Also upgrades root URLs to specific company info pages when possible.
    */
   private async validateKnowledgeUrls(
     research: CompanyResearch,
@@ -958,10 +965,8 @@ export class ResearchService {
     const quickCheck = async (url: string): Promise<boolean> => {
       if (!url || url.trim() === '') return false;
       try {
-        // Basic URL format check
         const parsed = new URL(url);
         if (!parsed.hostname || parsed.hostname.length < 3) return false;
-
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         const response = await fetch(url, {
@@ -973,23 +978,58 @@ export class ResearchService {
         clearTimeout(timeoutId);
         return response.ok;
       } catch {
-        // DNS failure, timeout, connection refused, etc.
         return false;
       }
+    };
+
+    // Check if URL is a root/top page (not a specific company info page)
+    const isRootUrl = (url: string): boolean => {
+      try {
+        const path = new URL(url).pathname.replace(/\/+$/, '');
+        return path === '' || /^\/[a-z]{2}$/.test(path);
+      } catch { return true; }
+    };
+
+    // Probe common company info paths on a domain
+    const probeCompanyInfoUrl = async (domain: string): Promise<string | null> => {
+      const paths = [
+        '/company-info', '/company-info/', '/company', '/company/',
+        '/about', '/about/', '/about-us', '/about-us/',
+        '/corporate', '/corporate/', '/company-profile', '/company-profile/',
+        '/company/overview', '/company/profile',
+        '/corporate/overview', '/corporate/profile',
+        '/ja/company/', '/ja/about/', '/ja/corporate/',
+      ];
+      // Check in batches of 5 for speed
+      for (let i = 0; i < paths.length; i += 5) {
+        const batch = paths.slice(i, i + 5);
+        const results = await Promise.all(
+          batch.map(async (p) => {
+            const url = `https://${domain}${p}`;
+            const ok = await quickCheck(url);
+            return ok ? url : null;
+          })
+        );
+        const found = results.find((u) => u !== null);
+        if (found) return found;
+      }
+      return null;
     };
 
     const googleSearchFallback = (query: string) =>
       `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
     try {
-      // Check both URLs in parallel with a 6s overall timeout
+      // Overall 10s timeout for validation + probing
       await Promise.race([
         (async () => {
+          // Step 1: Check if URLs are reachable at all
           const [homepageValid, businessValid] = await Promise.all([
             research.homepage_url ? quickCheck(research.homepage_url) : Promise.resolve(false),
             research.business_url ? quickCheck(research.business_url) : Promise.resolve(false),
           ]);
 
+          // Step 2: Handle invalid URLs
           if (!homepageValid) {
             const oldUrl = research.homepage_url || '(empty)';
             research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
@@ -1000,24 +1040,71 @@ export class ResearchService {
             research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
             console.log(`[Knowledge URL] business_url invalid (${oldUrl}) → Google Search fallback`);
           }
+
+          // Step 3: If homepage_url is valid but is just a root URL, try to find a specific company info page
+          if (homepageValid && research.homepage_url && isRootUrl(research.homepage_url)) {
+            try {
+              const domain = new URL(research.homepage_url).hostname;
+              console.log(`[Knowledge URL] homepage_url is root URL, probing ${domain} for company info page...`);
+              const betterUrl = await probeCompanyInfoUrl(domain);
+              if (betterUrl) {
+                console.log(`[Knowledge URL] Found company info page: ${betterUrl}`);
+                research.homepage_url = betterUrl;
+              }
+            } catch {
+              // Keep existing URL on probe failure
+            }
+          }
+
+          // Step 4: If business_url is same as homepage or root, try to find service/business page
+          if (businessValid && research.business_url && (
+            research.business_url === research.homepage_url || isRootUrl(research.business_url)
+          )) {
+            try {
+              const domain = new URL(research.business_url).hostname;
+              const servicePaths = [
+                '/service', '/service/', '/services', '/services/',
+                '/product', '/product/', '/products', '/products/',
+                '/solution', '/solution/', '/solutions', '/solutions/',
+                '/business', '/business/', '/service-info', '/service-info/',
+                '/ja/service/', '/ja/business/', '/ja/products/',
+              ];
+              for (let i = 0; i < servicePaths.length; i += 5) {
+                const batch = servicePaths.slice(i, i + 5);
+                const results = await Promise.all(
+                  batch.map(async (p) => {
+                    const url = `https://${domain}${p}`;
+                    const ok = await quickCheck(url);
+                    return ok ? url : null;
+                  })
+                );
+                const found = results.find((u) => u !== null);
+                if (found) {
+                  console.log(`[Knowledge URL] Found service page: ${found}`);
+                  research.business_url = found;
+                  break;
+                }
+              }
+            } catch {
+              // Keep existing URL on probe failure
+            }
+          }
         })(),
         new Promise<void>((resolve) =>
           setTimeout(() => {
-            console.warn('[Knowledge URL] Validation timed out after 6s, replacing with search fallback');
-            // On timeout, assume URLs are fabricated and use safe fallbacks
-            if (research.homepage_url) {
+            console.warn('[Knowledge URL] Validation timed out after 10s, using search fallback');
+            if (research.homepage_url && !research.homepage_url.includes('google.com/search')) {
               research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
             }
-            if (research.business_url) {
+            if (research.business_url && !research.business_url.includes('google.com/search')) {
               research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
             }
             resolve();
-          }, 6000)
+          }, 10000)
         ),
       ]);
     } catch (error) {
       console.warn('[Knowledge URL] Validation failed:', error);
-      // Safe fallback on any error
       research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
       research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
     }
