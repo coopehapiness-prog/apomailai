@@ -177,28 +177,57 @@ ${freeText || 'なし'}
       const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '';
       const serviceDescription = (settings as any).service_description || settings.serviceInfo?.description || '';
 
+      const pains = (research as any).pains || research.painPoints || [];
+      const painsText = pains.slice(0, 4).join('\n・') || '不明';
+      const overview = (research as any).overview || '';
+      const business = (research as any).business || '';
+      const news = ((research as any).news || []).slice(0, 3).map((n: any) => n.title || n.summary || '').filter(Boolean).join('\n・');
+
       const prompt = `あなたはインサイドセールス(IS)の総合サポートアシスタントです。
 
-【会社情報】
+【ターゲット企業情報】
 会社名：${companyName}
 業界：${(research as any).industry || '不明'}
-課題：${(research as any).pains?.slice(0, 2).join('、') || research.painPoints?.slice(0, 2).join('、') || ''}
+企業概要：${overview.substring(0, 300)}
+事業内容：${business.substring(0, 300)}
+推定される経営課題：
+・${painsText}
+${news ? `最近のニュース：\n・${news}` : ''}
 
-【サービス情報】
+【弊社サービス情報】
 サービス名：${serviceName}
 説明：${serviceDescription}
 
 以下の3つのコンテンツを作成してください：
 
-1. 電話スクリプト：メール開封後の電話対応用。30秒で相手の関心を引く。
-2. ビデオプロンプト：Sora等の動画生成AIで使用。パーソナライズされた30秒動画のプロンプト。
-3. フォローアップシナリオ：返信なし時、返信あり時のフォローアップメール方針（3パターン）。
+■ 1. 電話スクリプト
+メール開封後の電話対応用。30秒で相手の関心を引くスクリプト。
 
-以下の形式で出力：
+■ 2. 追撃メール（3日後）
+初回メール送付から3日後、返信がない場合のフォローメール。
+- 件名と本文を含む完全なメール文面
+- 初回メールの内容を軽く振り返りつつ、別角度の価値提案をする
+- 短くシンプルに（150文字以内の本文）
+
+■ 3. 追撃メール（1週間後）
+初回メール送付から1週間後、まだ返信がない場合のフォローメール。
+- 件名と本文を含む完全なメール文面
+- ${companyName}の最近の動向やニュースに触れ、タイムリーな切り口で再アプローチ
+- 新しい事例や具体的なデータを提示して関心を引く
+
+■ 4. 掘り起こしメール（1ヶ月後）
+リード流入から1ヶ月経過し、商談設定に至らなかった見込み客への再アプローチメール。
+以下の要件を満たすこと：
+- 件名と本文を含む完全なメール文面
+- ${companyName}のことをしっかり調べた上で、推定される経営課題（上記の課題リスト参照）に具体的に言及する
+- その課題に対して「${serviceName}」がどう貢献できるかを明確にアピールする
+- 1ヶ月前のコンタクトを自然に振り返りつつ、押し売り感を出さない
+- 「改めてお役に立てることがあるのではと思いご連絡しました」というスタンス
+- 具体的な成果数値や事例があれば盛り込む
+- 300〜400文字程度の本文
+
+以下の形式で出力（各セクションの区切りを厳守）：
 [PHONE_SCRIPT]
-＿＿＿＿＿＿＿
-
-[VIDEO_PROMPT]
 ＿＿＿＿＿＿＿
 
 [FOLLOWUP_SCENARIO_1]
@@ -212,13 +241,11 @@ ${freeText || 'なし'}
 
       const responseText = await callCloudRun(prompt);
 
-      const phoneScriptMatch = responseText.match(/\[PHONE_SCRIPT\]([\s\S]*?)(?=\[|$)/);
-      const videoPromptMatch = responseText.match(/\[VIDEO_PROMPT\]([\s\S]*?)(?=\[|$)/);
-      const followupMatches = responseText.match(/\[FOLLOWUP_SCENARIO_\d\]([\s\S]*?)(?=\[|$)/g);
+      const phoneScriptMatch = responseText.match(/\[PHONE_SCRIPT\]([\s\S]*?)(?=\[FOLLOWUP|$)/);
+      const followupMatches = responseText.match(/\[FOLLOWUP_SCENARIO_\d\]([\s\S]*?)(?=\[FOLLOWUP_SCENARIO_\d\]|\[|$)/g);
 
       return {
         phone_script: phoneScriptMatch ? phoneScriptMatch[1].trim() : undefined,
-        video_prompt: videoPromptMatch ? videoPromptMatch[1].trim() : undefined,
         follow_up_scenarios: followupMatches
           ? followupMatches.map((m) => m.replace(/\[FOLLOWUP_SCENARIO_\d\]/, '').trim())
           : undefined,
@@ -227,7 +254,6 @@ ${freeText || 'なし'}
       console.error('Error generating sub outputs:', error);
       return {
         phone_script: 'エラーが発生しました',
-        video_prompt: 'エラーが発生しました',
         follow_up_scenarios: [],
       };
     }
