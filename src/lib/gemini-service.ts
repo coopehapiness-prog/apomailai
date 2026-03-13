@@ -100,7 +100,7 @@ async function callAI(prompt: string): Promise<string> {
 
     // Stage 1: Try Cloud Run
     try {
-      const result = await callAI(prompt);
+      const result = await callCloudRun(prompt);
       return result;
     } catch (cloudRunError) {
       lastError = `Cloud Run: ${(cloudRunError as Error).message}`;
