@@ -73,17 +73,59 @@ export class ResearchService {
           );
 
           // Knowledge-based research: Gemini may fabricate news URLs.
-          // Replace unverifiable URLs with Google Search links so users always have a clickable link.
+          // Validate each URL first — keep valid ones, replace only invalid ones with Google Search.
           if (research.news) {
-            research.news = research.news.map((item) => {
-              // Generate a Google Search URL as a reliable fallback
+            const newsUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+            const checkNewsUrl = async (url: string): Promise<boolean> => {
+              if (!url || url.trim() === '') return false;
+              try {
+                const controller = new AbortController();
+                const tid = setTimeout(() => controller.abort(), 3000);
+                const res = await fetch(url, {
+                  redirect: 'follow',
+                  signal: controller.signal,
+                  headers: { 'User-Agent': newsUA },
+                  cache: 'no-store' as RequestCache,
+                });
+                clearTimeout(tid);
+                return res.ok;
+              } catch {
+                return false;
+              }
+            };
+
+            const newsValidation = research.news.map(async (item) => {
+              if (item.url && item.url.trim() !== '') {
+                const isValid = await checkNewsUrl(item.url);
+                if (isValid) {
+                  console.log(`[News URL] Gemini URL valid, keeping: ${item.url}`);
+                  return item;
+                }
+                console.log(`[News URL] Gemini URL invalid: ${item.url}`);
+              }
+              // Invalid or empty → Google Search fallback
               const searchQuery = `${companyName} ${item.title || ''}`.trim();
-              const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-              return {
-                ...item,
-                url: googleSearchUrl,
-              };
+              return { ...item, url: `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}` };
             });
+
+            // Race news validation against a 5s timeout
+            research.news = await Promise.race([
+              Promise.all(newsValidation),
+              new Promise<CompanyResearch['news']>((resolve) =>
+                setTimeout(() => {
+                  console.warn('[News URL] Validation timed out after 5s, using Google Search fallback for remaining');
+                  resolve(
+                    (research.news || []).map((item) => {
+                      if (item.url && !item.url.includes('google.com/search')) {
+                        const sq = `${companyName} ${item.title || ''}`.trim();
+                        return { ...item, url: `https://www.google.com/search?q=${encodeURIComponent(sq)}` };
+                      }
+                      return item;
+                    })
+                  );
+                }, 5000)
+              ),
+            ]);
           }
 
           // Knowledge-based research: Gemini may also fabricate homepage_url/business_url.
@@ -1029,20 +1071,42 @@ export class ResearchService {
             research.business_url ? quickCheck(research.business_url) : Promise.resolve(false),
           ]);
 
-          // Step 2: Handle invalid URLs
-          if (!homepageValid) {
-            const oldUrl = research.homepage_url || '(empty)';
-            research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
-            console.log(`[Knowledge URL] homepage_url invalid (${oldUrl}) → Google Search fallback`);
-          }
-          if (!businessValid) {
-            const oldUrl = research.business_url || '(empty)';
-            research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
-            console.log(`[Knowledge URL] business_url invalid (${oldUrl}) → Google Search fallback`);
+          // Step 2: Extract domain from Gemini URLs for probing (even if URL itself is invalid)
+          let probeDomain: string | null = null;
+          for (const url of [research.homepage_url, research.business_url]) {
+            if (url) {
+              try {
+                const host = new URL(url).hostname;
+                if (host && host.length >= 3 && !host.includes('google.com')) {
+                  probeDomain = host;
+                  break;
+                }
+              } catch {}
+            }
           }
 
-          // Step 3: If homepage_url is valid but is just a root URL, try to find a specific company info page
-          if (homepageValid && research.homepage_url && isRootUrl(research.homepage_url)) {
+          // Step 3: Handle invalid/valid URLs with domain probing
+          if (!homepageValid) {
+            const oldUrl = research.homepage_url || '(empty)';
+            console.log(`[Knowledge URL] homepage_url invalid: ${oldUrl}`);
+
+            // Try to probe the domain for a valid company page before falling back to Google Search
+            if (probeDomain) {
+              const domainReachable = await quickCheck(`https://${probeDomain}`);
+              if (domainReachable) {
+                console.log(`[Knowledge URL] Domain ${probeDomain} reachable, probing for company page...`);
+                const betterUrl = await probeCompanyInfoUrl(probeDomain);
+                research.homepage_url = betterUrl || `https://${probeDomain}`;
+                console.log(`[Knowledge URL] homepage_url → ${research.homepage_url}`);
+              } else {
+                research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
+                console.log(`[Knowledge URL] Domain unreachable → Google Search fallback`);
+              }
+            } else {
+              research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
+            }
+          } else if (research.homepage_url && isRootUrl(research.homepage_url)) {
+            // Valid but root URL → try to find a more specific company info page
             try {
               const domain = new URL(research.homepage_url).hostname;
               console.log(`[Knowledge URL] homepage_url is root URL, probing ${domain} for company info page...`);
@@ -1053,6 +1117,51 @@ export class ResearchService {
               }
             } catch {
               // Keep existing URL on probe failure
+            }
+          }
+
+          if (!businessValid) {
+            const oldUrl = research.business_url || '(empty)';
+            console.log(`[Knowledge URL] business_url invalid: ${oldUrl}`);
+
+            // Try domain probing for service/business page
+            const bDomain = probeDomain || (research.homepage_url ? (() => { try { const h = new URL(research.homepage_url!).hostname; return h.includes('google.com') ? null : h; } catch { return null; } })() : null);
+            if (bDomain) {
+              const servicePaths = [
+                '/service', '/service/', '/services', '/services/',
+                '/product', '/product/', '/products', '/products/',
+                '/solution', '/solution/', '/solutions', '/solutions/',
+                '/business', '/business/', '/service-info', '/service-info/',
+                '/ja/service/', '/ja/business/', '/ja/products/',
+              ];
+              let foundBusiness = false;
+              for (let i = 0; i < servicePaths.length; i += 5) {
+                const batch = servicePaths.slice(i, i + 5);
+                const results = await Promise.all(
+                  batch.map(async (p) => {
+                    const url = `https://${bDomain}${p}`;
+                    const ok = await quickCheck(url);
+                    return ok ? url : null;
+                  })
+                );
+                const found = results.find((u) => u !== null);
+                if (found) {
+                  research.business_url = found;
+                  console.log(`[Knowledge URL] Found business page: ${found}`);
+                  foundBusiness = true;
+                  break;
+                }
+              }
+              if (!foundBusiness) {
+                // Use homepage_url as fallback if it's a direct link, otherwise Google Search
+                if (research.homepage_url && !research.homepage_url.includes('google.com/search')) {
+                  research.business_url = research.homepage_url;
+                } else {
+                  research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
+                }
+              }
+            } else {
+              research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
             }
           }
 
@@ -1092,15 +1201,16 @@ export class ResearchService {
         })(),
         new Promise<void>((resolve) =>
           setTimeout(() => {
-            console.warn('[Knowledge URL] Validation timed out after 6s, using search fallback');
-            if (research.homepage_url && !research.homepage_url.includes('google.com/search')) {
+            console.warn('[Knowledge URL] Validation timed out after 10s, keeping current URLs');
+            // Only set Google Search fallback if URL is still empty or clearly invalid
+            if (!research.homepage_url || research.homepage_url.trim() === '') {
               research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
             }
-            if (research.business_url && !research.business_url.includes('google.com/search')) {
+            if (!research.business_url || research.business_url.trim() === '') {
               research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
             }
             resolve();
-          }, 6000)
+          }, 10000)
         ),
       ]);
     } catch (error) {
