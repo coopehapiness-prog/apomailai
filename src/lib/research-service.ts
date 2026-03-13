@@ -968,7 +968,7 @@ export class ResearchService {
         const parsed = new URL(url);
         if (!parsed.hostname || parsed.hostname.length < 3) return false;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
         const response = await fetch(url, {
           redirect: 'follow',
           signal: controller.signal,
@@ -1000,7 +1000,7 @@ export class ResearchService {
         '/corporate/overview', '/corporate/profile',
         '/ja/company/', '/ja/about/', '/ja/corporate/',
       ];
-      // Check in batches of 5 for speed
+      // Check in batches of 6 for speed
       for (let i = 0; i < paths.length; i += 5) {
         const batch = paths.slice(i, i + 5);
         const results = await Promise.all(
@@ -1020,7 +1020,7 @@ export class ResearchService {
       `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
     try {
-      // Overall 10s timeout for validation + probing
+      // Overall 6s timeout for validation + probing
       await Promise.race([
         (async () => {
           // Step 1: Check if URLs are reachable at all
@@ -1092,7 +1092,7 @@ export class ResearchService {
         })(),
         new Promise<void>((resolve) =>
           setTimeout(() => {
-            console.warn('[Knowledge URL] Validation timed out after 10s, using search fallback');
+            console.warn('[Knowledge URL] Validation timed out after 6s, using search fallback');
             if (research.homepage_url && !research.homepage_url.includes('google.com/search')) {
               research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
             }
@@ -1100,7 +1100,7 @@ export class ResearchService {
               research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
             }
             resolve();
-          }, 10000)
+          }, 6000)
         ),
       ]);
     } catch (error) {
