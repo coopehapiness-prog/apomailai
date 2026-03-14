@@ -4,6 +4,7 @@ import { authenticateRequest } from '@/lib/auth-utils';
 import { supabase } from '@/lib/supabase';
 import { geminiService } from '@/lib/gemini-service';
 import { researchService } from '@/lib/research-service';
+import { PLAN_LIMITS, PlanType } from '@/lib/types';
 
 export const maxDuration = 300; // Requires Vercel Pro plan
 
@@ -33,6 +34,11 @@ const GenerateEmailSchema = z.object({
   }).optional(),
 });
 
+function getCurrentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const userId = await authenticateRequest(request);
@@ -42,6 +48,43 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const validated = GenerateEmailSchema.parse(body);
+
+    // ===== Usage Limit Check =====
+    const currentMonth = getCurrentMonth();
+
+    // Get user's plan
+    const { data: userData } = await supabase
+      .from('users')
+      .select('plan')
+      .eq('id', userId)
+      .single();
+
+    const plan: PlanType = (userData?.plan as PlanType) || 'free';
+    const limit = PLAN_LIMITS[plan];
+
+    // Get current month's usage
+    const { data: usageData } = await supabase
+      .from('usage_tracking')
+      .select('email_count')
+      .eq('user_id', userId)
+      .eq('month', currentMonth)
+      .single();
+
+    const currentCount = usageData?.email_count || 0;
+
+    if (currentCount >= limit) {
+      return NextResponse.json(
+        {
+          error: `今月のメール生成上限（${limit}件）に達しました。プランをアップグレードしてください。`,
+          code: 'USAGE_LIMIT_EXCEEDED',
+          plan,
+          emailCount: currentCount,
+          emailLimit: limit,
+          remaining: 0,
+        },
+        { status: 403 }
+      );
+    }
 
     // Use streaming to keep the connection alive on Vercel Hobby plan
     const encoder = new TextEncoder();
@@ -111,6 +154,41 @@ export async function POST(request: NextRequest) {
           ]);
 
           send({ type: 'progress', message: '保存中...' });
+
+          // Increment usage count (UPSERT)
+          const { error: upsertError } = await supabase
+            .rpc('increment_usage', {
+              p_user_id: userId,
+              p_month: currentMonth,
+            });
+
+          // Fallback: if RPC doesn't exist, do manual upsert
+          if (upsertError) {
+            const { data: existingUsage } = await supabase
+              .from('usage_tracking')
+              .select('id, email_count')
+              .eq('user_id', userId)
+              .eq('month', currentMonth)
+              .single();
+
+            if (existingUsage) {
+              await supabase
+                .from('usage_tracking')
+                .update({
+                  email_count: existingUsage.email_count + 1,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', existingUsage.id);
+            } else {
+              await supabase
+                .from('usage_tracking')
+                .insert({
+                  user_id: userId,
+                  month: currentMonth,
+                  email_count: 1,
+                });
+            }
+          }
 
           // Save to generated_emails table
           const { data: generatedEmail, error: saveError } = await supabase

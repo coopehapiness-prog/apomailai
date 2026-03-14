@@ -5,6 +5,7 @@ import {
   GeneratedEmail,
   Lead,
   AnalyticsKPI,
+  UsageInfo,
 } from './types'
 
 // Use relative paths for API routes since they are co-located in Next.js
@@ -218,6 +219,19 @@ class APIClient {
     return this.request<{ success_factors: Array<{ factor: string; count: number; percentage: number; category: string }> }>(
       'GET', '/api/analytics/success-factors'
     )
+  }
+  // ===== Usage & Billing =====
+
+  async getUsage(): Promise<UsageInfo> {
+    return this.request<UsageInfo>('GET', '/api/usage')
+  }
+
+  async createCheckoutSession(plan: 'starter' | 'pro'): Promise<{ url: string }> {
+    return this.request<{ url: string }>('POST', '/api/stripe/checkout', { plan })
+  }
+
+  async createPortalSession(): Promise<{ url: string }> {
+    return this.request<{ url: string }>('POST', '/api/stripe/portal')
   }
 }
 

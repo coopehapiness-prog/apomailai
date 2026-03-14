@@ -23,12 +23,16 @@ function formatDate(dateStr: string): string {
   return dateStr
 }
 
-/** Validate that a URL is well-formed and uses http(s) protocol */
+/** Validate that a URL is well-formed, uses http(s) protocol, and is a direct link (not Google Search fallback) */
 function isValidUrl(url: string): boolean {
   if (!url || url.trim() === '') return false
   try {
     const parsed = new URL(url)
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+    // Filter out Google Search fallback URLs - these are not direct links
+    if (parsed.hostname === 'www.google.com' && parsed.pathname === '/search') return false
+    if (parsed.hostname === 'google.com' && parsed.pathname === '/search') return false
+    return true
   } catch {
     return false
   }

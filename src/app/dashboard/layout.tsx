@@ -19,6 +19,7 @@ export default function DashboardLayout({
     { label: 'メール生成履歴', href: '/dashboard/history' },
     { label: 'リード管理・分析', href: '/dashboard/leads', hidden: true },
     { label: 'カスタム設定', href: '/dashboard/settings' },
+    { label: '💎 プラン', href: '/dashboard/pricing' },
   ]
 
   const isActiveTab = (href: string) => pathname === href

@@ -1,11 +1,14 @@
 'use client'
 
-import { useState, FormEvent, useCallback } from 'react'
+import { useState, useEffect, FormEvent, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
+import Link from 'next/link'
 import { useEmailGeneration } from '@/lib/hooks/useEmailGeneration'
+import { apiClient } from '@/lib/api-client'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { ResearchReport } from './components/ResearchReport'
 import { EmailOutput } from './components/EmailOutput'
-import { SubOutputs } from './components/SubOutputs'
+import { UsageInfo, PLAN_LABELS } from '@/lib/types'
 import toast from 'react-hot-toast'
 
 type LeadSource = 'ウェビナー参加' | '資料ダウンロード' | 'お問い合わせ' | '展示会' | '紹介'
@@ -41,12 +44,12 @@ const FREE_TEXT_CHIPS = [
 ]
 
 export default function EmailPage() {
+  const { data: session } = useSession()
   const {
     company,
     source,
     patterns,
     research,
-    subOutputs,
     loading,
     progressMessage,
     error,
@@ -54,6 +57,33 @@ export default function EmailPage() {
     regenerate,
     reset,
   } = useEmailGeneration()
+
+  const [usage, setUsage] = useState<UsageInfo | null>(null)
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      const data = await apiClient.getUsage()
+      setUsage(data)
+    } catch {
+      // Silently fail - usage bar just won't show
+    }
+  }, [])
+
+  useEffect(() => {
+    if ((session as any)?.accessToken) {
+      apiClient.setAccessToken((session as any).accessToken as string)
+    }
+    fetchUsage()
+  }, [session, fetchUsage])
+
+  // Refresh usage after generation
+  useEffect(() => {
+    if (!loading && patterns && patterns.length > 0) {
+      fetchUsage()
+    }
+  }, [loading, patterns, fetchUsage])
+
+  const isOverLimit = usage ? usage.remaining <= 0 : false
 
   const [formData, setFormData] = useState({
     company: '',
@@ -180,6 +210,57 @@ export default function EmailPage() {
             企業情報を入力すると、AIが営業メールを自動生成します
           </p>
         </div>
+
+        {/* Usage Bar */}
+        {usage && (
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-300">
+                  {PLAN_LABELS[usage.plan]}プラン
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  {usage.emailCount} / {usage.emailLimit} 件使用済み
+                </span>
+              </div>
+              {usage.plan === 'free' && (
+                <Link
+                  href="/dashboard/pricing"
+                  className="text-[10px] font-semibold text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  アップグレード →
+                </Link>
+              )}
+            </div>
+            <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  usage.remaining <= 0
+                    ? 'bg-red-500'
+                    : usage.remaining <= 3
+                    ? 'bg-yellow-500'
+                    : 'bg-blue-500'
+                }`}
+                style={{
+                  width: `${Math.min(100, (usage.emailCount / usage.emailLimit) * 100)}%`,
+                }}
+              />
+            </div>
+            {isOverLimit && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[10px] text-red-400 font-semibold">
+                  今月の生成上限に達しました
+                </span>
+                <Link
+                  href="/dashboard/pricing"
+                  className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 text-blue-400 hover:bg-blue-500/30 font-semibold transition-colors"
+                >
+                  プランをアップグレード
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleInitialSubmit} className="space-y-6">
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 space-y-4">
@@ -315,7 +396,7 @@ export default function EmailPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || isOverLimit}
             className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white font-semibold py-3 rounded-lg hover:from-blue-700 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {loading ? (
@@ -323,7 +404,7 @@ export default function EmailPage() {
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 メール生成中...
               </span>
-            ) : 'メール生成'}
+            ) : isOverLimit ? '生成上限に達しました' : 'メール生成'}
           </button>
         </form>
       </div>
@@ -363,22 +444,12 @@ export default function EmailPage() {
 
       {research && <ResearchReport research={research} />}
 
-      {/* ===== Section 3: Related Outputs ===== */}
-      <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mt-7 mb-3">
-        {'📎 関連アウトプット'}
-      </h2>
-
-      <SubOutputs
-        subOutputs={subOutputs || undefined}
-        patterns={patterns}
-      />
-
-      {/* ===== Section 4: Customize & Regenerate ===== */}
+      {/* ===== Section 3: Customize & Regenerate ===== */}
       <h2 className="text-[15px] font-bold text-white flex items-center gap-2 mt-7 mb-3">
         {'🎛️ カスタマイズして再生成'}
       </h2>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3 pl-[26px]">
-        チェックやフリーテキストで指示を入れて「再生成」すると、4パターンの文面が生成されます
+        チェックやフリーテキストで指示を入れて「再生成」すると、追撃シナリオ（3日後/1週間後/1ヶ月後）の文面が生成されます
       </p>
 
       {/* Pain Hook Selection - AI課題仮説フック */}
@@ -610,7 +681,7 @@ export default function EmailPage() {
           </span>
         ) : customization.selectedPain
           ? `🧠 「${customization.selectedPain.length > 20 ? customization.selectedPain.substring(0, 20) + '…' : customization.selectedPain}」を起点に再生成`
-          : '🔄 選択内容で再生成（4パターン）'}
+          : '🔄 選択内容で再生成（追撃シナリオ）'}
       </button>
 
       <style>{`

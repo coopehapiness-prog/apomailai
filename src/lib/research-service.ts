@@ -32,8 +32,9 @@ export class ResearchService {
           (Date.now() - new Date(cached.created_at).getTime()) / (1000 * 60 * 60 * 24);
         const data = cached.research_data as CompanyResearch;
         const hasContent = data.overview && data.overview !== '情報なし' && (data.pains?.length ?? 0) > 0;
-        const hasUrls = !!(data.homepage_url || data.business_url);
-        const newsWithUrls = (data.news || []).filter((n) => n.url && n.url.trim() !== '');
+        const isDirectUrl = (url?: string) => url && url.trim() !== '' && !url.includes('google.com/search');
+        const hasUrls = !!(isDirectUrl(data.homepage_url) || isDirectUrl(data.business_url));
+        const newsWithUrls = (data.news || []).filter((n) => n.url && n.url.trim() !== '' && !n.url.includes('google.com/search'));
         const hasEnoughNewsUrls = newsWithUrls.length >= 4 && (data.news || []).length >= 7;
         if (cacheAge < 7 && hasContent && hasUrls && hasEnoughNewsUrls) {
           console.log(`Using cached research for ${companyName}`);
@@ -63,8 +64,8 @@ export class ResearchService {
 ■ 重要：情報が不確かな場合でも、業界の一般的な傾向から合理的に推測し、具体的で有用な情報を出力してください。
 ■ 「pains」は必ず5つ以上出力してください。${companyName}の業界・規模・ビジネスモデルに応じた具体的な経営課題を記載してください。
 ■ 「overview」と「business」は必ず2-3文以上で具体的に記載してください。「情報なし」や「不明」は絶対に出力しないでください。
-■ 「homepage_url」はあなたの知識にある${companyName}の公式ホームページURLを記載してください。確信がない場合は空文字""にしてください。
-■ 「business_url」は${companyName}のサービス・製品紹介ページURLを記載してください。不明な場合はhomepage_urlと同じ値にしてください。`;
+■ 「homepage_url」は${companyName}の会社概要ページの直接URLを記載してください（例：https://example.co.jp/about や https://example.co.jp/company）。ルートURL（https://example.co.jp/）ではなく、会社概要・企業情報ページの直接リンクを優先してください。URLにハッシュフラグメント（#company等）が必要な場合はそれも含めてください。確信がない場合は空文字""にしてください。
+■ 「business_url」は${companyName}のサービス・製品紹介ページの直接URLを記載してください（例：https://example.co.jp/service や https://example.co.jp/products）。不明な場合は空文字""にしてください。`;
           const research = await geminiService.analyzeResearch(
             companyName,
             knowledgePrompt,
@@ -103,9 +104,8 @@ export class ResearchService {
                 }
                 console.log(`[News URL] Gemini URL invalid: ${item.url}`);
               }
-              // Invalid or empty → Google Search fallback
-              const searchQuery = `${companyName} ${item.title || ''}`.trim();
-              return { ...item, url: `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}` };
+              // Invalid or empty → leave URL empty (UI won't show a link)
+              return { ...item, url: '' };
             });
 
             // Race news validation against a 5s timeout
@@ -113,16 +113,8 @@ export class ResearchService {
               Promise.all(newsValidation),
               new Promise<CompanyResearch['news']>((resolve) =>
                 setTimeout(() => {
-                  console.warn('[News URL] Validation timed out after 5s, using Google Search fallback for remaining');
-                  resolve(
-                    (research.news || []).map((item) => {
-                      if (item.url && !item.url.includes('google.com/search')) {
-                        const sq = `${companyName} ${item.title || ''}`.trim();
-                        return { ...item, url: `https://www.google.com/search?q=${encodeURIComponent(sq)}` };
-                      }
-                      return item;
-                    })
-                  );
+                  console.warn('[News URL] Validation timed out after 5s, keeping existing URLs');
+                  resolve(research.news || []);
                 }, 5000)
               ),
             ]);
@@ -348,15 +340,10 @@ export class ResearchService {
         console.log(`[News URL] After fill: ${filledCount}/${research.news.length} news items have URLs`);
       }
 
-      // Final safety net: ensure ALL news items have a URL (use Google Search as last resort)
+      // News items without URLs simply won't show a link in the UI
+      // No Google Search fallback — only direct links are used
       if (research.news) {
-        research.news = research.news.map((item) => {
-          if (item.url && item.url.trim() !== '') return item;
-          const searchQuery = `${companyName} ${item.title || ''}`.trim();
-          const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-          return { ...item, url: googleSearchUrl };
-        });
-        console.log(`[News URL] Final guarantee: all ${research.news.length} news items now have URLs`);
+        console.log(`[News URL] ${research.news.filter(n => n.url && n.url.trim() !== '').length}/${research.news.length} news items have direct URLs`);
       }
 
       // Post-process: extract homepage/business URLs from search results if AI didn't find them
@@ -1058,8 +1045,8 @@ export class ResearchService {
       return null;
     };
 
-    const googleSearchFallback = (query: string) =>
-      `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    // Never use Google Search fallback URLs — they are not direct links.
+    // When a URL can't be found, leave it empty so the UI won't show a broken link.
 
     try {
       // Overall 6s timeout for validation + probing
@@ -1099,11 +1086,11 @@ export class ResearchService {
                 research.homepage_url = betterUrl || `https://${probeDomain}`;
                 console.log(`[Knowledge URL] homepage_url → ${research.homepage_url}`);
               } else {
-                research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
+                research.homepage_url = '';
                 console.log(`[Knowledge URL] Domain unreachable → Google Search fallback`);
               }
             } else {
-              research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
+              research.homepage_url = '';
             }
           } else if (research.homepage_url && isRootUrl(research.homepage_url)) {
             // Valid but root URL → try to find a more specific company info page
@@ -1157,11 +1144,11 @@ export class ResearchService {
                 if (research.homepage_url && !research.homepage_url.includes('google.com/search')) {
                   research.business_url = research.homepage_url;
                 } else {
-                  research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
+                  research.business_url = '';
                 }
               }
             } else {
-              research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
+              research.business_url = '';
             }
           }
 
@@ -1204,10 +1191,10 @@ export class ResearchService {
             console.warn('[Knowledge URL] Validation timed out after 10s, keeping current URLs');
             // Only set Google Search fallback if URL is still empty or clearly invalid
             if (!research.homepage_url || research.homepage_url.trim() === '') {
-              research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
+              research.homepage_url = '';
             }
             if (!research.business_url || research.business_url.trim() === '') {
-              research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
+              research.business_url = '';
             }
             resolve();
           }, 10000)
@@ -1215,8 +1202,8 @@ export class ResearchService {
       ]);
     } catch (error) {
       console.warn('[Knowledge URL] Validation failed:', error);
-      research.homepage_url = googleSearchFallback(`${companyName} 公式サイト 会社概要`);
-      research.business_url = googleSearchFallback(`${companyName} 事業内容 サービス`);
+      research.homepage_url = '';
+      research.business_url = '';
     }
   }
 

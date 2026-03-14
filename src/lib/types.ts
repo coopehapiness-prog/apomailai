@@ -157,6 +157,29 @@ export interface SuccessFactor {
   category: 'structure' | 'tone' | 'cta' | 'content' | 'personalization'
 }
 
+// Plan & Usage types
+export type PlanType = 'free' | 'starter' | 'pro'
+
+export const PLAN_LIMITS: Record<PlanType, number> = {
+  free: 15,
+  starter: 100,
+  pro: 500,
+}
+
+export const PLAN_LABELS: Record<PlanType, string> = {
+  free: 'Free',
+  starter: 'Starter',
+  pro: 'Pro',
+}
+
+export interface UsageInfo {
+  plan: PlanType
+  emailCount: number
+  emailLimit: number
+  remaining: number
+  currentMonth: string
+}
+
 export interface AnalyticsKPI {
   period: string
   emails_generated: number
