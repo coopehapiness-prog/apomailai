@@ -252,13 +252,24 @@ export class ResearchService {
             return { ...item, url: unusedNewsUrl.url };
           }
 
-          // Last resort 2: assign ANY unused search result URL (skip company homepage/about pages)
+          // Last resort 2: assign ANY unused search result URL that looks like a specific article page
           const anyUnusedUrl = searchResultsWithUrls.find((r) => {
             if (usedUrls.has(r.url)) return false;
             try {
-              const path = new URL(r.url).pathname.replace(/\/+$/, '');
-              // Skip root pages, about pages, service pages (these are company pages, not news)
-              return path !== '' && path !== '/' && !path.includes('/about') && !path.includes('/company') && !path.includes('/corporate');
+              const parsed = new URL(r.url);
+              const path = parsed.pathname.replace(/\/+$/, '');
+              const segments = path.split('/').filter(Boolean);
+              // Must be a deep path (specific article page, not a listing page)
+              if (segments.length < 2) return false;
+              // Skip company info pages
+              const skipPaths = ['/about', '/company', '/corporate', '/service', '/product', '/contact', '/privacy', '/terms'];
+              if (skipPaths.some((s) => path.includes(s))) return false;
+              // Skip news INDEX/listing pages (e.g., /news/, /news, /press/, /press-releases/)
+              // These are listing pages, not specific articles. Specific articles have deeper paths like /news/2024/article-slug
+              const lastSegment = segments[segments.length - 1];
+              const listingPages = ['news', 'press', 'press-releases', 'media', 'blog', 'topics', 'information', 'ir', 'investor'];
+              if (listingPages.includes(lastSegment)) return false;
+              return true;
             } catch { return false; }
           });
           if (anyUnusedUrl) {
@@ -266,13 +277,20 @@ export class ResearchService {
             return { ...item, url: anyUnusedUrl.url };
           }
 
-          // Last resort 3: reuse ANY already-used news/press URL (allow duplicate links rather than no link)
+          // Last resort 3: reuse already-used news/press URLs only if they point to specific articles
           const anyNewsUrl = searchResultsWithUrls.find((r) => {
             try {
               const host = new URL(r.url).hostname;
               const path = new URL(r.url).pathname.replace(/\/+$/, '');
+              const segments = path.split('/').filter(Boolean);
               const isNews = newsDomains.some((d) => host.includes(d));
-              const isDeepPath = path.split('/').filter(Boolean).length >= 2;
+              // Must be a specific article (deep path), not a listing page
+              const isDeepPath = segments.length >= 2;
+              if (!isDeepPath) return false;
+              // Even for news domains, skip listing pages
+              const lastSegment = segments[segments.length - 1];
+              const listingPages = ['news', 'press', 'press-releases', 'media', 'blog', 'topics'];
+              if (listingPages.includes(lastSegment)) return false;
               return isNews || isDeepPath;
             } catch { return false; }
           });

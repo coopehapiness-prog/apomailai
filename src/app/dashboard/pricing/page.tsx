@@ -25,7 +25,7 @@ const PLANS: PlanCard[] = [
     priceNote: '',
     emails: '月15件',
     features: [
-      'AIメール生成（追撃シナリオ3通）',
+      'AIメール生成（初回+追撃シナリオ4通）',
       'AIリサーチレポート',
       'カスタマイズ再生成',
     ],

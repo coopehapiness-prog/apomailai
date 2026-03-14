@@ -9,12 +9,14 @@ interface EmailOutputProps {
 }
 
 const TIMING_ICONS: Record<string, string> = {
+  '初回メール（流入直後）': '🚀',
   '追撃メール（3日後）': '📅',
   '追撃メール（1週間後）': '📅',
   '掘り起こしメール（1ヶ月後）': '🔄',
 }
 
 const TIMING_LABELS: Record<string, string> = {
+  '初回メール（流入直後）': '流入直後',
   '追撃メール（3日後）': '3日後',
   '追撃メール（1週間後）': '1週間後',
   '掘り起こしメール（1ヶ月後）': '1ヶ月後',
