@@ -483,10 +483,6 @@ function matchNewsToSearchResults(
   const seen = new Set<string>();
   const uniqueResults = searchResults.filter((r) => {
     if (!r.url || seen.has(r.url)) return false;
-    // Filter out results not relevant to the target company
-    if (companyName && !isRelevantToCompany(r, companyName)) {
-      return false;
-    }
     seen.add(r.url);
     return true;
   });
@@ -667,15 +663,18 @@ export class ResearchService {
               console.warn('[News] News scrape failed:', err);
             }
 
-            // Deduplicate by URL and filter to company-relevant results only
+            // Deduplicate by URL, prefer company-relevant results
             const seenUrls = new Set<string>();
             realArticles = realArticles.filter((r) => {
               if (seenUrls.has(r.url)) return false;
               seenUrls.add(r.url);
-              // Filter out results not about the target company
-              return isRelevantToCompany(r, companyName);
+              return true;
             });
-            console.log(`[News] ${realArticles.length} relevant articles after filtering`);
+            // Sort: relevant articles first, then others
+            const relevant = realArticles.filter((r) => isRelevantToCompany(r, companyName));
+            const others = realArticles.filter((r) => !isRelevantToCompany(r, companyName));
+            realArticles = [...relevant, ...others];
+            console.log(`[News] ${realArticles.length} articles (${relevant.length} relevant)`);
 
             if (realArticles.length > 0) {
               // REPLACE Gemini's fabricated news with real articles (title + URL together)
@@ -856,11 +855,6 @@ export class ResearchService {
           const matchedOriginal = validUrlMap.get(normalized);
           if (matchedOriginal) {
             const searchResult = urlToSearchResult.get(normalized);
-            // Check if this search result is actually about the target company
-            if (searchResult && !isRelevantToCompany(searchResult, companyName)) {
-              console.log(`[News URL] Rejecting unrelated result: ${matchedOriginal} (not about ${companyName})`);
-              return { ...item, url: '' };
-            }
             const result = { ...item, url: matchedOriginal };
             // Fix date from search result if available
             if (searchResult) {
@@ -925,13 +919,15 @@ export class ResearchService {
         // For items that already have verified URLs, keep them.
         // For items WITHOUT URLs, replace with real articles (title + URL as a pair).
         const usedUrls = new Set(research.news.filter((n) => n.url && n.url.trim() !== '').map((n) => n.url));
-        // Filter: only articles relevant to the target company
-        const articlePool = allCandidates.filter((r) =>
+        // Build article pool: prefer relevant articles, fallback to all articles
+        const allArticles = allCandidates.filter((r) =>
           r.url && !isListingPage(r.url) && !usedUrls.has(r.url) &&
-          (isNewsDomain(r.url) || isArticlePage(r.url)) &&
-          isRelevantToCompany(r, companyName)
+          (isNewsDomain(r.url) || isArticlePage(r.url))
         );
-        console.log(`[News URL] Article pool: ${articlePool.length} relevant articles (from ${allCandidates.length} total)`);
+        const relevantArticles = allArticles.filter((r) => isRelevantToCompany(r, companyName));
+        // Use relevant articles if we have enough, otherwise fall back to all articles
+        const articlePool = relevantArticles.length >= 3 ? relevantArticles : allArticles;
+        console.log(`[News URL] Article pool: ${articlePool.length} articles (${relevantArticles.length} relevant / ${allArticles.length} total)`);
 
         research.news = research.news.map((item) => {
           if (item.url && item.url.trim() !== '') return item; // Already has verified URL
