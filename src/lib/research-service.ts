@@ -1756,8 +1756,13 @@ export class ResearchService {
     // Never use Google Search fallback URLs — they are not direct links.
     // When a URL can't be found, leave it empty so the UI won't show a broken link.
 
+    // Save original Gemini URLs before validation (to restore on timeout/error)
+    const originalHomepageUrl = research.homepage_url || '';
+    const originalBusinessUrl = research.business_url || '';
+
     try {
-      // Overall 6s timeout for validation + probing
+
+      // Overall timeout for validation + probing
       await Promise.race([
         (async () => {
           // Step 1: Check if URLs are reachable at all
@@ -1896,22 +1901,23 @@ export class ResearchService {
         })(),
         new Promise<void>((resolve) =>
           setTimeout(() => {
-            console.warn('[Knowledge URL] Validation timed out after 10s, keeping current URLs');
-            // Only set Google Search fallback if URL is still empty or clearly invalid
+            console.warn('[Knowledge URL] Validation timed out after 12s, restoring original URLs');
+            // On timeout: restore Gemini's original URLs (better than empty)
             if (!research.homepage_url || research.homepage_url.trim() === '') {
-              research.homepage_url = '';
+              research.homepage_url = originalHomepageUrl;
             }
             if (!research.business_url || research.business_url.trim() === '') {
-              research.business_url = '';
+              research.business_url = originalBusinessUrl;
             }
             resolve();
-          }, 10000)
+          }, 12000)
         ),
       ]);
     } catch (error) {
       console.warn('[Knowledge URL] Validation failed:', error);
-      research.homepage_url = '';
-      research.business_url = '';
+      // On error: restore Gemini's original URLs instead of clearing
+      research.homepage_url = research.homepage_url || originalHomepageUrl;
+      research.business_url = research.business_url || originalBusinessUrl;
     }
   }
 
