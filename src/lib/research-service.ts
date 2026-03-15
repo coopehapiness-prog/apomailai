@@ -658,6 +658,26 @@ export class ResearchService {
             } catch { /* ignore */ }
           }
 
+          // Fix dates from title (PR TIMES style: "タイトル2026年1月9日 09時00分")
+          if (research.news) {
+            research.news = research.news.map((item) => {
+              const title = item.title || '';
+              const prtimesDateMatch = title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日\s*\d{1,2}時\d{1,2}分\s*$/);
+              if (prtimesDateMatch) {
+                const realDate = `${prtimesDateMatch[1]}-${prtimesDateMatch[2].padStart(2, '0')}-${prtimesDateMatch[3].padStart(2, '0')}`;
+                const cleanTitle = title.replace(/\d{4}年\d{1,2}月\d{1,2}日\s*\d{1,2}時\d{1,2}分\s*$/, '').trim();
+                return { ...item, title: cleanTitle || title, date: realDate };
+              }
+              const jpDateMatch = title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日\s*$/);
+              if (jpDateMatch) {
+                const realDate = `${jpDateMatch[1]}-${jpDateMatch[2].padStart(2, '0')}-${jpDateMatch[3].padStart(2, '0')}`;
+                const cleanTitle = title.replace(/\d{4}年\d{1,2}月\d{1,2}日\s*$/, '').trim();
+                return { ...item, title: cleanTitle || title, date: realDate };
+              }
+              return item;
+            });
+          }
+
           // Knowledge-based research: Gemini may also fabricate homepage_url/business_url.
           // Validate them with a quick fetch and replace with Google Search fallback if invalid.
           await this.validateKnowledgeUrls(research, companyName);
@@ -872,6 +892,28 @@ export class ResearchService {
         } catch (e) {
           console.warn('[News Title] Title enrichment failed:', e);
         }
+
+        // Final pass: extract date from title (PR TIMES style "2026年1月9日 09時30分")
+        // and clean the title. This catches cases where the title contains the real date.
+        research.news = research.news.map((item) => {
+          const title = item.title || '';
+          // Match PR TIMES style date in title: "タイトル2026年1月9日 09時00分"
+          const prtimesDateMatch = title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日\s*\d{1,2}時\d{1,2}分\s*$/);
+          if (prtimesDateMatch) {
+            const realDate = `${prtimesDateMatch[1]}-${prtimesDateMatch[2].padStart(2, '0')}-${prtimesDateMatch[3].padStart(2, '0')}`;
+            const cleanTitle = title.replace(/\d{4}年\d{1,2}月\d{1,2}日\s*\d{1,2}時\d{1,2}分\s*$/, '').trim();
+            console.log(`[News Date] Fixed from title: "${item.date}" → "${realDate}" (title: "${cleanTitle}")`);
+            return { ...item, title: cleanTitle || title, date: realDate };
+          }
+          // Match standalone date in title: "タイトル2026年1月9日"
+          const jpDateMatch = title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日\s*$/);
+          if (jpDateMatch) {
+            const realDate = `${jpDateMatch[1]}-${jpDateMatch[2].padStart(2, '0')}-${jpDateMatch[3].padStart(2, '0')}`;
+            const cleanTitle = title.replace(/\d{4}年\d{1,2}月\d{1,2}日\s*$/, '').trim();
+            return { ...item, title: cleanTitle || title, date: realDate };
+          }
+          return item;
+        });
       }
 
       // Post-process: extract homepage/business URLs from search results if AI didn't find them
