@@ -396,68 +396,110 @@ export class ResearchService {
             []
           );
 
-          // Knowledge-based research: Gemini may fabricate news URLs and content.
-          // Step 1: Validate each URL — reject listing pages, 404s, and soft-404s
-          // Step 2: Use Google Search to find real news URLs as replacements
+          // Knowledge-based research: Gemini fabricates news titles AND URLs.
+          // NEW APPROACH: Scrape REAL news first, then REPLACE Gemini's fabricated items.
+          // This ensures both titles and URLs are real and match each other.
           if (research.news) {
-            const newsValidation = research.news.map(async (item) => {
-              if (item.url && item.url.trim() !== '') {
-                const isValid = await checkNewsUrl(item.url);
-                if (isValid) {
-                  console.log(`[News URL] Gemini URL valid: ${item.url}`);
-                  return item;
-                }
-                console.log(`[News URL] Gemini URL rejected: ${item.url}`);
+            console.log(`[News] Replacing Gemini-fabricated news with real articles for ${companyName}...`);
+            let realArticles: SearchResultWithUrl[] = [];
+
+            // Source 1: Google Search API (if available)
+            try {
+              const searchResults = await this.googleSearchWithUrls(companyName);
+              if (searchResults.length > 0) {
+                // Filter to news-relevant results only
+                const newsResults = searchResults.filter((r) =>
+                  (isNewsDomain(r.url) || isArticlePage(r.url)) && !isListingPage(r.url)
+                );
+                realArticles.push(...newsResults);
+                console.log(`[News] Google Search: ${newsResults.length} news-relevant results`);
               }
-              return { ...item, url: '' };
+            } catch (err) {
+              console.warn('[News] Google Search failed:', err);
+            }
+
+            // Source 2: Scrape company news pages & PR TIMES
+            try {
+              const homepageUrl = research.homepage_url || '';
+              const scrapedResults = await scrapeCompanyNewsUrls(companyName, homepageUrl || undefined);
+              if (scrapedResults.length > 0) {
+                console.log(`[News] Scraped ${scrapedResults.length} real article URLs`);
+                realArticles.push(...scrapedResults);
+              }
+            } catch (err) {
+              console.warn('[News] News scrape failed:', err);
+            }
+
+            // Deduplicate by URL
+            const seenUrls = new Set<string>();
+            realArticles = realArticles.filter((r) => {
+              if (seenUrls.has(r.url)) return false;
+              seenUrls.add(r.url);
+              return true;
             });
 
-            research.news = await Promise.race([
-              Promise.all(newsValidation),
-              new Promise<CompanyResearch['news']>((resolve) =>
-                setTimeout(() => {
-                  console.warn('[News URL] Validation timed out after 5s');
-                  resolve(research.news || []);
-                }, 5000)
-              ),
-            ]);
+            if (realArticles.length > 0) {
+              // REPLACE Gemini's fabricated news with real articles (title + URL together)
+              const newNews: CompanyResearch['news'] = [];
+              const usedUrls = new Set<string>();
 
-            // Fallback for items with empty URLs: try Google Search first, then company news scraping
-            const missingCount = research.news.filter((n) => !n.url || n.url.trim() === '').length;
-            if (missingCount > 0) {
-              console.log(`[News URL] ${missingCount} items missing URLs, searching for real articles...`);
-              let fallbackResults: SearchResultWithUrl[] = [];
+              for (let i = 0; i < Math.min(research.news.length, 7); i++) {
+                const geminiItem = research.news[i];
 
-              // Try 1: Google Search API (if available)
-              try {
-                const searchResults = await this.googleSearchWithUrls(companyName);
-                if (searchResults.length > 0) {
-                  fallbackResults = searchResults;
-                  console.log(`[News URL] Google Search found ${searchResults.length} results`);
+                // Try keyword match to find the most relevant real article
+                const keywords = extractKeywords(geminiItem.title || '');
+                let bestMatch: SearchResultWithUrl | undefined;
+                let bestScore = 0;
+
+                for (const r of realArticles) {
+                  if (usedUrls.has(r.url)) continue;
+                  const rText = (r.title + ' ' + r.snippet).toLowerCase();
+                  const score = keywords.filter((kw) => rText.includes(kw)).length;
+                  const adjustedScore = isNewsDomain(r.url) ? score + 0.5 : score;
+                  if (adjustedScore > bestScore) {
+                    bestScore = adjustedScore;
+                    bestMatch = r;
+                  }
                 }
-              } catch (err) {
-                console.warn('[News URL] Google Search fallback failed:', err);
-              }
 
-              // Try 2: Scrape company news pages & PR TIMES (always, to supplement)
-              try {
-                const homepageUrl = research.homepage_url || '';
-                const scrapedResults = await scrapeCompanyNewsUrls(companyName, homepageUrl || undefined);
-                if (scrapedResults.length > 0) {
-                  console.log(`[News URL] Scraped ${scrapedResults.length} real article URLs`);
-                  fallbackResults = [...fallbackResults, ...scrapedResults];
+                if (bestMatch && bestScore >= 1) {
+                  // Good match: use real title + URL, keep Gemini's date/summary as hints
+                  usedUrls.add(bestMatch.url);
+                  newNews.push({
+                    title: bestMatch.title,
+                    url: bestMatch.url,
+                    date: geminiItem.date || '',
+                    summary: geminiItem.summary || '',
+                  });
+                  console.log(`[News] Matched: "${geminiItem.title}" → REAL: "${bestMatch.title}"`);
+                } else {
+                  // No good match: assign next unused real article
+                  const unused = realArticles.find((r) => !usedUrls.has(r.url));
+                  if (unused) {
+                    usedUrls.add(unused.url);
+                    newNews.push({
+                      title: unused.title,
+                      url: unused.url,
+                      date: geminiItem.date || '',
+                      summary: '',
+                    });
+                    console.log(`[News] No match, using real article: "${unused.title}"`);
+                  } else {
+                    // All real articles used — keep Gemini item without URL
+                    newNews.push({ ...geminiItem, url: '' });
+                  }
                 }
-              } catch (err) {
-                console.warn('[News URL] News scrape fallback failed:', err);
               }
 
-              if (fallbackResults.length > 0) {
-                research.news = matchNewsToSearchResults(research.news, fallbackResults);
-              }
+              research.news = newNews;
+            } else {
+              // No real articles found — clear all fabricated URLs
+              console.log('[News] No real articles found, clearing fabricated URLs');
+              research.news = research.news.map((item) => ({ ...item, url: '' }));
             }
 
             const finalCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
-            console.log(`[News URL] Final: ${finalCount}/${research.news.length} items have URLs`);
+            console.log(`[News] Final: ${finalCount}/${research.news.length} items have real URLs`);
           }
 
           // Knowledge-based research: Gemini may also fabricate homepage_url/business_url.
@@ -564,7 +606,8 @@ export class ResearchService {
           ),
         ]);
 
-        // Step 2: Fill empty URLs using search results + scraped company news
+        // Step 2: For items with empty URLs, REPLACE with real articles (title + URL together)
+        // This prevents title/URL mismatch that occurs with keyword-only matching
         let allCandidates = [...searchResultsWithUrls];
 
         // Supplement with scraped news from company site & PR TIMES
@@ -582,7 +625,45 @@ export class ResearchService {
           }
         }
 
-        research.news = matchNewsToSearchResults(research.news, allCandidates);
+        // For items that already have verified URLs, keep them.
+        // For items WITHOUT URLs, replace with real articles (title + URL as a pair).
+        const usedUrls = new Set(research.news.filter((n) => n.url && n.url.trim() !== '').map((n) => n.url));
+        const articlePool = allCandidates.filter((r) =>
+          r.url && !isListingPage(r.url) && !usedUrls.has(r.url) &&
+          (isNewsDomain(r.url) || isArticlePage(r.url))
+        );
+
+        research.news = research.news.map((item) => {
+          if (item.url && item.url.trim() !== '') return item; // Already has verified URL
+
+          // Find best matching real article by keyword similarity
+          const keywords = extractKeywords(item.title || '');
+          let bestMatch: SearchResultWithUrl | undefined;
+          let bestScore = 0;
+          for (const r of articlePool) {
+            if (usedUrls.has(r.url)) continue;
+            const rText = (r.title + ' ' + r.snippet).toLowerCase();
+            const score = keywords.filter((kw) => rText.includes(kw)).length;
+            const adj = isNewsDomain(r.url) ? score + 0.5 : score;
+            if (adj > bestScore) { bestScore = adj; bestMatch = r; }
+          }
+
+          if (bestMatch && bestScore >= 1) {
+            usedUrls.add(bestMatch.url);
+            console.log(`[News URL] Replaced: "${item.title}" → REAL: "${bestMatch.title}"`);
+            return { title: bestMatch.title, url: bestMatch.url, date: item.date || '', summary: item.summary || '' };
+          }
+
+          // Fallback: assign any unused news-domain article
+          const unused = articlePool.find((r) => !usedUrls.has(r.url));
+          if (unused) {
+            usedUrls.add(unused.url);
+            console.log(`[News URL] Fallback replace: "${item.title}" → "${unused.title}"`);
+            return { title: unused.title, url: unused.url, date: item.date || '', summary: '' };
+          }
+
+          return item; // No replacement available
+        });
 
         const filledCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
         console.log(`[News URL] ${filledCount}/${research.news.length} news items have direct URLs`);

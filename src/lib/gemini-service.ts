@@ -474,7 +474,14 @@ export class GeminiService {
       const serviceDescription = (settings as any).service_description || settings.serviceInfo?.description || '';
       const serviceBenefit = (settings as any).service_benefit || settings.serviceInfo?.strengths?.join('、') || '';
       const tone = (settings as any).tone || settings.promptSettings?.tone || 'プロフェッショナルで親しみやすい';
-      const caseStudiesRaw = (settings as any).case_studies || settings.case_studies || '';
+      const caseStudiesRawOriginal = (settings as any).case_studies || settings.case_studies || '';
+      // Clean raw knowledge base content to prevent formatting artifacts from leaking into emails
+      const caseStudiesRaw = caseStudiesRawOriginal
+        .replace(/[■□●○◆◇▼▲★☆►▸▹→←↑↓⇒⇐⇑⇓]/g, '') // Remove bullet/decoration characters
+        .replace(/[【】「」『』〈〉《》〔〕〘〙〚〛]/g, '') // Remove brackets (AI should paraphrase, not copy)
+        .replace(/https?:\/\/[^\s)」】]+/g, '[URL省略]') // Remove raw URLs from knowledge base
+        .replace(/\n{3,}/g, '\n\n') // Collapse excessive newlines
+        .trim();
 
       // Build service summary with enough detail for AI to craft relevant proposals
       const serviceSummaryParts: string[] = [];
@@ -526,7 +533,7 @@ ${isReferral
 職位：${senderTitle}
 会社：${senderCompany}
 
-【提供サービス概要（※メールには要約して自然に組み込む。設定内容をそのまま貼り付けないこと。サービスの具体的な強みや特徴を相手の課題に合わせて言い換えること）】
+【提供サービス概要（※以下はあくまで参考情報。メールでは自分の言葉で要約して自然に組み込むこと。以下の文章を一切コピペしないこと。見出し記号（■★●等）やセクションタイトル（「他社との違い」「優位性」等）は絶対にメール文面に含めないこと）】
 ${serviceSummary}${caseStudiesContext}
 
 ★★★ 学習データの活用ルール（厳守） ★★★
@@ -619,7 +626,9 @@ ${freeText || 'なし'}
    - 1つの文の中に2つの異なる文が混在していないか（例：「〜でしたら、「サービス名」でそれでは、〜について紹介させていただきまといった改善を〜」のような文の破綻）
    - 「〜でそれでは」「〜させていただきまといった」のような不自然な接続がないか
    - サービス名の後に続く文が自然に読めるか
+   - ナレッジベースや事例データの生テキストがそのままコピペされていないか（■CBA、他社との違い、優位性について簡 等の断片が混入していないか）
    ★文が長くなりすぎる場合は、無理に1文にまとめず2文に分けること
+   ★ナレッジベースの内容を使う場合は、必ず完全に自分の言葉で書き直すこと。参考データの文章断片をそのまま挿入しない
 
 以下の4つのメールを日本語で作成してください：
 
