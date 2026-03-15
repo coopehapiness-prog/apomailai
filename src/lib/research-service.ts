@@ -122,6 +122,120 @@ async function checkNewsUrl(url: string): Promise<boolean> {
 }
 
 /**
+ * Scrape a company's news/press page and PR TIMES to find real article URLs.
+ * This is used as a fallback when Google Search API is not available.
+ */
+async function scrapeCompanyNewsUrls(
+  companyName: string,
+  homepageUrl?: string,
+): Promise<SearchResultWithUrl[]> {
+  const results: SearchResultWithUrl[] = [];
+  const fetchPage = async (url: string): Promise<string> => {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(url, {
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: { 'User-Agent': NEWS_UA },
+        cache: 'no-store' as RequestCache,
+      });
+      clearTimeout(tid);
+      if (!res.ok) return '';
+      return await res.text();
+    } catch {
+      clearTimeout(tid);
+      return '';
+    }
+  };
+
+  // Extract links from HTML that look like news article pages
+  const extractArticleLinks = (html: string, baseUrl: string): SearchResultWithUrl[] => {
+    const links: SearchResultWithUrl[] = [];
+    const seen = new Set<string>();
+    // Match <a href="...">text</a> patterns
+    const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let match;
+    while ((match = linkRegex.exec(html)) !== null) {
+      let href = match[1];
+      const rawText = match[2].replace(/<[^>]*>/g, '').trim();
+      if (!href || !rawText || rawText.length < 5) continue;
+
+      // Resolve relative URLs
+      try {
+        href = new URL(href, baseUrl).href;
+      } catch { continue; }
+
+      // Skip non-http, external tracking, and already seen
+      if (!href.startsWith('http')) continue;
+      if (seen.has(href)) continue;
+      seen.add(href);
+
+      // Must look like an article page (deep path)
+      if (isListingPage(href)) continue;
+      try {
+        const path = new URL(href).pathname.replace(/\/+$/, '');
+        const segments = path.split('/').filter(Boolean);
+        if (segments.length < 2) continue;
+      } catch { continue; }
+
+      // Check if path contains news-related segments
+      const lowerHref = href.toLowerCase();
+      const hasNewsPath = /\/(news|press|release|topics|blog|info|article|post|update|media|ir|investor)\//i.test(lowerHref);
+      // Also accept prtimes/nikkei/etc domains
+      const isNews = isNewsDomain(href);
+
+      if (hasNewsPath || isNews) {
+        links.push({ title: rawText.slice(0, 200), url: href, snippet: rawText.slice(0, 300) });
+      }
+    }
+    return links;
+  };
+
+  // 1. Try scraping the company's news page (if homepage URL is available)
+  if (homepageUrl) {
+    try {
+      const baseHost = new URL(homepageUrl).origin;
+      // Common news page paths
+      const newsPaths = ['/news', '/news/', '/press', '/press/', '/topics', '/topics/', '/information', '/information/', '/media', '/media/'];
+      for (const np of newsPaths) {
+        const newsPageUrl = baseHost + np;
+        const html = await fetchPage(newsPageUrl);
+        if (html.length > 1000) {
+          const links = extractArticleLinks(html, newsPageUrl);
+          if (links.length > 0) {
+            console.log(`[News Scrape] Found ${links.length} article links from ${newsPageUrl}`);
+            results.push(...links);
+            break; // Found a working news page, stop trying others
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[News Scrape] Company news page scrape failed:', e);
+    }
+  }
+
+  // 2. Try PR TIMES search for the company
+  try {
+    const prtimesUrl = `https://prtimes.jp/main/action.php?run=html&page=searchkey&search_word=${encodeURIComponent(companyName)}`;
+    const html = await fetchPage(prtimesUrl);
+    if (html.length > 1000) {
+      const links = extractArticleLinks(html, 'https://prtimes.jp');
+      // Filter to only prtimes.jp article links
+      const prtimesLinks = links.filter((l) => l.url.includes('prtimes.jp/main/html/rd/'));
+      if (prtimesLinks.length > 0) {
+        console.log(`[News Scrape] Found ${prtimesLinks.length} PR TIMES articles for ${companyName}`);
+        results.push(...prtimesLinks);
+      }
+    }
+  } catch (e) {
+    console.warn('[News Scrape] PR TIMES scrape failed:', e);
+  }
+
+  return results;
+}
+
+/**
  * Match news items (missing URLs) to search results by keyword similarity.
  * Uses a multi-tier strategy: keyword match → news domain → article page → any deep URL → reuse.
  * Returns a new news array with URLs filled where possible.
@@ -308,17 +422,37 @@ export class ResearchService {
               ),
             ]);
 
-            // Google Search fallback for items with empty URLs
+            // Fallback for items with empty URLs: try Google Search first, then company news scraping
             const missingCount = research.news.filter((n) => !n.url || n.url.trim() === '').length;
             if (missingCount > 0) {
-              console.log(`[News URL] ${missingCount} items missing URLs, trying Google Search...`);
+              console.log(`[News URL] ${missingCount} items missing URLs, searching for real articles...`);
+              let fallbackResults: SearchResultWithUrl[] = [];
+
+              // Try 1: Google Search API (if available)
               try {
                 const searchResults = await this.googleSearchWithUrls(companyName);
                 if (searchResults.length > 0) {
-                  research.news = matchNewsToSearchResults(research.news, searchResults);
+                  fallbackResults = searchResults;
+                  console.log(`[News URL] Google Search found ${searchResults.length} results`);
                 }
               } catch (err) {
                 console.warn('[News URL] Google Search fallback failed:', err);
+              }
+
+              // Try 2: Scrape company news pages & PR TIMES (always, to supplement)
+              try {
+                const homepageUrl = research.homepage_url || '';
+                const scrapedResults = await scrapeCompanyNewsUrls(companyName, homepageUrl || undefined);
+                if (scrapedResults.length > 0) {
+                  console.log(`[News URL] Scraped ${scrapedResults.length} real article URLs`);
+                  fallbackResults = [...fallbackResults, ...scrapedResults];
+                }
+              } catch (err) {
+                console.warn('[News URL] News scrape fallback failed:', err);
+              }
+
+              if (fallbackResults.length > 0) {
+                research.news = matchNewsToSearchResults(research.news, fallbackResults);
               }
             }
 
@@ -430,8 +564,25 @@ export class ResearchService {
           ),
         ]);
 
-        // Step 2: Fill empty URLs using shared matching logic
-        research.news = matchNewsToSearchResults(research.news, searchResultsWithUrls);
+        // Step 2: Fill empty URLs using search results + scraped company news
+        let allCandidates = [...searchResultsWithUrls];
+
+        // Supplement with scraped news from company site & PR TIMES
+        const missingAfterVerify = research.news.filter((n) => !n.url || n.url.trim() === '').length;
+        if (missingAfterVerify > 0) {
+          try {
+            const homepageUrl = research.homepage_url || '';
+            const scrapedResults = await scrapeCompanyNewsUrls(companyName, homepageUrl || undefined);
+            if (scrapedResults.length > 0) {
+              console.log(`[News URL] Supplemented with ${scrapedResults.length} scraped article URLs`);
+              allCandidates = [...allCandidates, ...scrapedResults];
+            }
+          } catch (err) {
+            console.warn('[News URL] Scrape supplement failed:', err);
+          }
+        }
+
+        research.news = matchNewsToSearchResults(research.news, allCandidates);
 
         const filledCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
         console.log(`[News URL] ${filledCount}/${research.news.length} news items have direct URLs`);
