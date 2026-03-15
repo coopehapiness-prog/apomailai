@@ -442,7 +442,7 @@ export default function EmailPage() {
         {'🎛️ カスタマイズして再生成'}
       </h2>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3 pl-[26px]">
-        チェックやフリーテキストで指示を入れて「再生成」すると、追撃シナリオ（3日後/1週間後/1ヶ月後）の文面が生成されます
+        チェックやフリーテキストで指示を入れて「再生成」すると、4パターン（流入直後/3日後/1週間後/1ヶ月後）の文面が再生成されます
       </p>
 
       {/* Pain Hook Selection - AI課題仮説フック */}
@@ -678,7 +678,7 @@ export default function EmailPage() {
           </span>
         ) : customization.selectedPain
           ? `🧠 「${customization.selectedPain.length > 20 ? customization.selectedPain.substring(0, 20) + '…' : customization.selectedPain}」を起点に再生成`
-          : '🔄 選択内容で再生成（追撃シナリオ）'}
+          : '🔄 選択内容で再生成'}
       </button>
 
       <style>{`
