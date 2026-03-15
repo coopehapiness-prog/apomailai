@@ -334,9 +334,56 @@ async function scrapeCompanyNewsUrls(
   return results;
 }
 
+/** Extract a date from a search result snippet or title (e.g., "2026年3月10日", "2025/12/01") */
+function extractDateFromText(text: string): string | null {
+  if (!text) return null;
+  // Pattern: 2026年3月10日
+  const jpMatch = text.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (jpMatch) {
+    return `${jpMatch[1]}-${jpMatch[2].padStart(2, '0')}-${jpMatch[3].padStart(2, '0')}`;
+  }
+  // Pattern: 2026/03/10 or 2026-03-10
+  const isoMatch = text.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+  }
+  return null;
+}
+
+/** Build updated news item from a search result match, inheriting real title/date */
+function buildMatchedNewsItem(
+  item: { title: string; summary?: string; url?: string; date?: string },
+  match: SearchResultWithUrl,
+): { title: string; summary?: string; url: string; date?: string } {
+  const result = { ...item, url: match.url };
+
+  // Extract real date from snippet/title
+  const snippetDate = extractDateFromText(match.snippet || '');
+  const titleDate = extractDateFromText(match.title || '');
+  const realDate = snippetDate || titleDate;
+  if (realDate) {
+    result.date = realDate;
+  }
+
+  // Replace generic title with search result's actual title
+  if (isGenericTitle(item.title) && match.title && !isGenericTitle(match.title)) {
+    // Clean up search result title (remove site name suffix, date prefix)
+    let cleanTitle = match.title
+      .replace(/\s*[|\-–—]\s*(PR\s*TIMES|PRTIMES|プレスリリース|ニュース|お知らせ|News|Press).*/i, '')
+      .replace(/^\d{4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2}\s*/, '')
+      .trim();
+    if (cleanTitle.length >= 5) {
+      result.title = cleanTitle;
+    }
+  }
+
+  return result;
+}
+
 /**
  * Match news items (missing URLs) to search results by keyword similarity.
  * Uses a multi-tier strategy: keyword match → news domain → article page → any deep URL → reuse.
+ * Also updates titles and dates from search results for accuracy.
  * Returns a new news array with URLs filled where possible.
  */
 function matchNewsToSearchResults(
@@ -393,7 +440,7 @@ function matchNewsToSearchResults(
       if (bestMatch && bestScore >= 1) {
         usedUrls.add(bestMatch.url);
         console.log(`[News URL] Keyword matched: "${item.title}" → ${bestMatch.url}`);
-        return { ...item, url: bestMatch.url };
+        return buildMatchedNewsItem(item, bestMatch);
       }
     }
 
@@ -402,7 +449,7 @@ function matchNewsToSearchResults(
     if (unusedNews) {
       usedUrls.add(unusedNews.url);
       console.log(`[News URL] News domain fallback: ${unusedNews.url}`);
-      return { ...item, url: unusedNews.url };
+      return buildMatchedNewsItem(item, unusedNews);
     }
 
     // Tier 3: Assign first unused company article URL
@@ -410,7 +457,7 @@ function matchNewsToSearchResults(
     if (unusedCompany) {
       usedUrls.add(unusedCompany.url);
       console.log(`[News URL] Company article fallback: ${unusedCompany.url}`);
-      return { ...item, url: unusedCompany.url };
+      return buildMatchedNewsItem(item, unusedCompany);
     }
 
     // Tier 4: Assign ANY unused deep-path URL (not listing page)
@@ -418,19 +465,19 @@ function matchNewsToSearchResults(
     if (unusedDeep) {
       usedUrls.add(unusedDeep.url);
       console.log(`[News URL] Deep URL fallback: ${unusedDeep.url}`);
-      return { ...item, url: unusedDeep.url };
+      return buildMatchedNewsItem(item, unusedDeep);
     }
 
     // Tier 5: Reuse already-used news-domain URL (duplicate is better than empty)
     if (newsDomainArticles.length > 0) {
       console.log(`[News URL] Reusing news URL: ${newsDomainArticles[0].url}`);
-      return { ...item, url: newsDomainArticles[0].url };
+      return buildMatchedNewsItem(item, newsDomainArticles[0]);
     }
 
     // Tier 6: Reuse any non-listing deep URL
     if (anyDeepUrls.length > 0) {
       console.log(`[News URL] Reusing deep URL: ${anyDeepUrls[0].url}`);
-      return { ...item, url: anyDeepUrls[0].url };
+      return buildMatchedNewsItem(item, anyDeepUrls[0]);
     }
 
     return item;
@@ -680,14 +727,37 @@ export class ResearchService {
           validUrlMap.set(normalizeUrl(r.url), r.url);
         }
 
+        // Build URL → search result map for date/title extraction
+        const urlToSearchResult = new Map<string, SearchResultWithUrl>();
+        for (const r of searchResultsWithUrls) {
+          urlToSearchResult.set(normalizeUrl(r.url), r);
+        }
+
         // Step 1: Verify Gemini URLs — keep if in search results, HTTP-check if not
+        // Also fix dates from search results to prevent Gemini date fabrication
         const verifiedNews = await Promise.all(research.news.map(async (item) => {
           if (!item.url || item.url.trim() === '') return item;
 
           // Check if URL came from search results
           const normalized = normalizeUrl(item.url);
           const matchedOriginal = validUrlMap.get(normalized);
-          if (matchedOriginal) return { ...item, url: matchedOriginal };
+          if (matchedOriginal) {
+            const searchResult = urlToSearchResult.get(normalized);
+            const result = { ...item, url: matchedOriginal };
+            // Fix date from search result if available
+            if (searchResult) {
+              const realDate = extractDateFromText(searchResult.snippet || '') || extractDateFromText(searchResult.title || '');
+              if (realDate) result.date = realDate;
+              // Fix generic title
+              if (isGenericTitle(item.title) && searchResult.title && !isGenericTitle(searchResult.title)) {
+                let cleanTitle = searchResult.title
+                  .replace(/\s*[|\-–—]\s*(PR\s*TIMES|PRTIMES|プレスリリース|ニュース|お知らせ|News|Press).*/i, '')
+                  .trim();
+                if (cleanTitle.length >= 5) result.title = cleanTitle;
+              }
+            }
+            return result;
+          }
 
           // URL not in search results — could be slightly modified by Gemini.
           // Reject listing pages, then HTTP-check the rest.
@@ -759,16 +829,27 @@ export class ResearchService {
 
           if (bestMatch && bestScore >= 1) {
             usedUrls.add(bestMatch.url);
-            console.log(`[News URL] Replaced: "${item.title}" → REAL: "${bestMatch.title}"`);
-            return { title: bestMatch.title, url: bestMatch.url, date: item.date || '', summary: item.summary || '' };
+            const realDate = extractDateFromText(bestMatch.snippet || '') || extractDateFromText(bestMatch.title || '') || item.date || '';
+            // Clean up title: remove site name suffix
+            let cleanTitle = bestMatch.title
+              .replace(/\s*[|\-–—]\s*(PR\s*TIMES|PRTIMES|プレスリリース|ニュース|お知らせ|News|Press).*/i, '')
+              .trim();
+            if (cleanTitle.length < 5) cleanTitle = bestMatch.title;
+            console.log(`[News URL] Replaced: "${item.title}" → REAL: "${cleanTitle}" (date: ${realDate})`);
+            return { title: cleanTitle, url: bestMatch.url, date: realDate, summary: item.summary || '' };
           }
 
           // Fallback: assign any unused news-domain article
           const unused = articlePool.find((r) => !usedUrls.has(r.url));
           if (unused) {
             usedUrls.add(unused.url);
-            console.log(`[News URL] Fallback replace: "${item.title}" → "${unused.title}"`);
-            return { title: unused.title, url: unused.url, date: item.date || '', summary: '' };
+            const realDate = extractDateFromText(unused.snippet || '') || extractDateFromText(unused.title || '') || item.date || '';
+            let cleanTitle = unused.title
+              .replace(/\s*[|\-–—]\s*(PR\s*TIMES|PRTIMES|プレスリリース|ニュース|お知らせ|News|Press).*/i, '')
+              .trim();
+            if (cleanTitle.length < 5) cleanTitle = unused.title;
+            console.log(`[News URL] Fallback replace: "${item.title}" → "${cleanTitle}" (date: ${realDate})`);
+            return { title: cleanTitle, url: unused.url, date: realDate, summary: '' };
           }
 
           return item; // No replacement available
