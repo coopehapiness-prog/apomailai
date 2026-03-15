@@ -386,7 +386,7 @@ export class ResearchService {
 ■ 重要：情報が不確かな場合でも、業界の一般的な傾向から合理的に推測し、具体的で有用な情報を出力してください。
 ■ 「pains」は必ず5つ以上出力してください。${companyName}の業界・規模・ビジネスモデルに応じた具体的な経営課題を記載してください。
 ■ 「overview」と「business」は必ず2-3文以上で具体的に記載してください。「情報なし」や「不明」は絶対に出力しないでください。
-■ 「homepage_url」は${companyName}の会社概要ページの直接URLを記載してください（例：https://example.co.jp/about や https://example.co.jp/company）。ルートURL（https://example.co.jp/）ではなく、会社概要・企業情報ページの直接リンクを優先してください。URLにハッシュフラグメント（#company等）が必要な場合はそれも含めてください。確信がない場合は空文字""にしてください。
+■ 「homepage_url」は${companyName}の会社概要ページの直接URLを記載してください（例：https://example.co.jp/about や https://example.co.jp/company、またはサブドメイン型の https://about.example.com/ ）。ルートURL（https://example.co.jp/）ではなく、会社概要・企業情報ページの直接リンクを優先してください。URLにハッシュフラグメント（#company等）が必要な場合はそれも含めてください。確信がない場合は空文字""にしてください。
 ■ 「business_url」は${companyName}のサービス・製品紹介ページの直接URLを記載してください（例：https://example.co.jp/service や https://example.co.jp/products）。不明な場合は空文字""にしてください。
 ■ 【ニュースについて最重要ルール】本日は${new Date().toISOString().slice(0, 10)}です。未来の日付のニュースは絶対に作成しないでください。確実に知っている過去の事実のみを記載してください。ニュースURLは個別の記事ページのURL（例：https://example.co.jp/news/2025/article-title）を記載し、ニュース一覧ページ（例：https://example.co.jp/news/）は使わないでください。URLに確信がない場合は空文字""にしてください。捏造は厳禁です。`;
           const research = await geminiService.analyzeResearch(
@@ -1195,11 +1195,17 @@ export class ResearchService {
           return null;
         }
 
-        // Skip if redirected to a completely different domain (e.g., electronics.sony.com from www.sony.com)
+        // Skip if redirected to a completely unrelated domain
+        // Allow subdomain redirects (e.g., kauche.com/about → about.kauche.com)
         try {
           const origHost = new URL(url).hostname.replace(/^www\./, '');
           const finalHost = new URL(finalUrl).hostname.replace(/^www\./, '');
-          if (origHost !== finalHost) return null;
+          if (origHost !== finalHost) {
+            // Allow if finalHost is a subdomain of origHost (e.g., about.kauche.com is subdomain of kauche.com)
+            const origRoot = origHost.split('.').slice(-2).join('.');
+            const finalRoot = finalHost.split('.').slice(-2).join('.');
+            if (origRoot !== finalRoot) return null;
+          }
         } catch { /* ignore parse errors */ }
 
         // Soft 404 detection: check first 15KB of page for title, headings, and body text
@@ -1245,10 +1251,20 @@ export class ResearchService {
       '/en/business/', '/en/products/', '/en/services/',
     ];
 
+    // Also try subdomain-based URLs (e.g., about.kauche.com, corporate.example.com)
+    const rootDomain = domain.replace(/^www\./, '');
+    const aboutSubdomains = [
+      `about.${rootDomain}`,
+      `corporate.${rootDomain}`,
+      `corp.${rootDomain}`,
+      `company.${rootDomain}`,
+    ];
+
     // Run all probes in parallel for speed
-    const [aboutResults, businessResults] = await Promise.all([
+    const [aboutResults, businessResults, subdomainResults] = await Promise.all([
       Promise.all(aboutPaths.map((p) => tryUrl(`https://${domain}${p}`))),
       Promise.all(businessPaths.map((p) => tryUrl(`https://${domain}${p}`))),
+      Promise.all(aboutSubdomains.map((sd) => tryUrl(`https://${sd}/`))),
     ]);
 
     // Filter: reject root/home page URLs for business (e.g., redirect /product → /en/)
@@ -1259,7 +1275,9 @@ export class ResearchService {
       } catch { return false; }
     };
 
-    result.aboutUrl = aboutResults.find((u) => u !== null) ?? undefined;
+    result.aboutUrl = aboutResults.find((u) => u !== null)
+      ?? subdomainResults.find((u) => u !== null)
+      ?? undefined;
     result.businessUrl = businessResults.find((u) => u !== null && !isRootPage(u)) ?? undefined;
 
     return result;
@@ -1352,7 +1370,7 @@ export class ResearchService {
         '/corporate/overview', '/corporate/profile',
         '/ja/company/', '/ja/about/', '/ja/corporate/',
       ];
-      // Check in batches of 6 for speed
+      // Check path-based URLs in batches
       for (let i = 0; i < paths.length; i += 5) {
         const batch = paths.slice(i, i + 5);
         const results = await Promise.all(
@@ -1365,6 +1383,20 @@ export class ResearchService {
         const found = results.find((u) => u !== null);
         if (found) return found;
       }
+
+      // Also try subdomain-based about pages (e.g., about.kauche.com, corporate.example.com)
+      const rootDomain = domain.replace(/^www\./, '');
+      const subdomains = [`about.${rootDomain}`, `corporate.${rootDomain}`, `corp.${rootDomain}`, `company.${rootDomain}`];
+      const subResults = await Promise.all(
+        subdomains.map(async (sd) => {
+          const url = `https://${sd}/`;
+          const ok = await quickCheck(url);
+          return ok ? url : null;
+        })
+      );
+      const subFound = subResults.find((u) => u !== null);
+      if (subFound) return subFound;
+
       return null;
     };
 
