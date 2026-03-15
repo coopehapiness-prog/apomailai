@@ -16,6 +16,214 @@ interface SearchResultWithUrl {
   snippet: string;
 }
 
+// ── Shared constants ──
+const NEWS_DOMAINS = [
+  'prtimes.jp', 'nikkei.com', 'itmedia.co.jp', 'techcrunch.com',
+  'japan.zdnet.com', 'businessinsider.jp', 'toyokeizai.net', 'diamond.jp',
+  'ascii.jp', 'watch.impress.co.jp', 'atmarkit.itmedia.co.jp',
+  'news.yahoo.co.jp', 'mainichi.jp', 'asahi.com', 'yomiuri.co.jp',
+  'sankei.com', 'nhk.or.jp', 'kyodonews.net', 'jiji.com',
+  'reuters.com', 'bloomberg.co.jp',
+];
+const LISTING_SEGMENTS = [
+  'news', 'press', 'press-releases', 'media', 'blog', 'topics',
+  'information', 'ir', 'investor', 'newsroom', 'updates', 'articles',
+];
+const SOFT_404_KEYWORDS = [
+  'not found', '404', 'ページが見つかりません', '見つかりませんでした',
+  'page not found', 'お探しのページ',
+];
+const NEWS_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+/** Check if a URL is a listing/index page (e.g. /news/, /press/) rather than a specific article */
+function isListingPage(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/+$/, '');
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length === 0) return false;
+    const lastSeg = segments[segments.length - 1];
+    return LISTING_SEGMENTS.includes(lastSeg);
+  } catch {
+    return false;
+  }
+}
+
+/** Check if a URL looks like a specific article/content page (deep path, not listing page) */
+function isArticlePage(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/+$/, '');
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length < 2) return false;
+    if (isListingPage(url)) return false;
+    // Reject pure company-info pages (exact matches only, not substrings)
+    const exactSkip = ['/about', '/company', '/corporate', '/contact', '/privacy', '/terms'];
+    if (exactSkip.includes(path)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Check if a URL belongs to a known news domain */
+function isNewsDomain(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return NEWS_DOMAINS.some((d) => host.includes(d));
+  } catch {
+    return false;
+  }
+}
+
+/** Extract keywords from a Japanese title for fuzzy matching */
+function extractKeywords(title: string): string[] {
+  const rawSegments = title.toLowerCase()
+    .split(/[\s　、。・「」『』（）()\[\]【】：:；;！!？?]+/)
+    .filter((w) => w.length >= 2);
+  const keywords: string[] = [];
+  for (const seg of rawSegments) {
+    keywords.push(seg);
+    const subWords = seg.split(/[はがをにでとのもへよりからまで]/).filter((w) => w.length >= 2);
+    if (subWords.length > 1) keywords.push(...subWords);
+    const years = seg.match(/\d{4}/g);
+    if (years) keywords.push(...years);
+  }
+  return keywords;
+}
+
+/** HTTP-check a news URL: rejects listing pages, 404s, and soft-404s */
+async function checkNewsUrl(url: string): Promise<boolean> {
+  if (!url || url.trim() === '') return false;
+  if (isListingPage(url)) {
+    console.log(`[News URL] Rejecting listing page URL: ${url}`);
+    return false;
+  }
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': NEWS_UA },
+      cache: 'no-store' as RequestCache,
+    });
+    clearTimeout(tid);
+    if (!res.ok) return false;
+    const text = await res.text();
+    const chunk = text.substring(0, 10000).toLowerCase();
+    const titleMatch = chunk.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? titleMatch[1] : '';
+    if (SOFT_404_KEYWORDS.some((ind) => title.includes(ind))) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Match news items (missing URLs) to search results by keyword similarity.
+ * Uses a multi-tier strategy: keyword match → news domain → article page → any deep URL → reuse.
+ * Returns a new news array with URLs filled where possible.
+ */
+function matchNewsToSearchResults(
+  news: CompanyResearch['news'],
+  searchResults: SearchResultWithUrl[],
+): CompanyResearch['news'] {
+  if (!news || searchResults.length === 0) return news;
+
+  // Deduplicate search results by URL
+  const seen = new Set<string>();
+  const uniqueResults = searchResults.filter((r) => {
+    if (!r.url || seen.has(r.url)) return false;
+    seen.add(r.url);
+    return true;
+  });
+
+  // Build tiered candidate pools (from most preferred to least)
+  const newsDomainArticles = uniqueResults.filter((r) =>
+    isNewsDomain(r.url) && !isListingPage(r.url)
+  );
+  const companyArticles = uniqueResults.filter((r) =>
+    !isNewsDomain(r.url) && isArticlePage(r.url) && !isListingPage(r.url)
+  );
+  const anyDeepUrls = uniqueResults.filter((r) => {
+    if (isListingPage(r.url)) return false;
+    try {
+      const path = new URL(r.url).pathname.replace(/\/+$/, '');
+      const segments = path.split('/').filter(Boolean);
+      return segments.length >= 2;
+    } catch { return false; }
+  });
+
+  const usedUrls = new Set(news.filter((n) => n.url && n.url.trim() !== '').map((n) => n.url));
+
+  return news.map((item) => {
+    if (item.url && item.url.trim() !== '') return item;
+
+    // Tier 1: Keyword matching against ALL search results (not listing pages)
+    const keywords = extractKeywords(item.title || '');
+    if (keywords.length > 0) {
+      let bestMatch: SearchResultWithUrl | undefined;
+      let bestScore = 0;
+      for (const r of uniqueResults) {
+        if (usedUrls.has(r.url) || isListingPage(r.url)) continue;
+        const rText = (r.title + ' ' + r.snippet).toLowerCase();
+        const score = keywords.filter((kw) => rText.includes(kw)).length;
+        // Boost score for news domain URLs
+        const adjustedScore = isNewsDomain(r.url) ? score + 0.5 : score;
+        if (adjustedScore > bestScore) {
+          bestScore = adjustedScore;
+          bestMatch = r;
+        }
+      }
+      if (bestMatch && bestScore >= 1) {
+        usedUrls.add(bestMatch.url);
+        console.log(`[News URL] Keyword matched: "${item.title}" → ${bestMatch.url}`);
+        return { ...item, url: bestMatch.url };
+      }
+    }
+
+    // Tier 2: Assign first unused news-domain article URL
+    const unusedNews = newsDomainArticles.find((r) => !usedUrls.has(r.url));
+    if (unusedNews) {
+      usedUrls.add(unusedNews.url);
+      console.log(`[News URL] News domain fallback: ${unusedNews.url}`);
+      return { ...item, url: unusedNews.url };
+    }
+
+    // Tier 3: Assign first unused company article URL
+    const unusedCompany = companyArticles.find((r) => !usedUrls.has(r.url));
+    if (unusedCompany) {
+      usedUrls.add(unusedCompany.url);
+      console.log(`[News URL] Company article fallback: ${unusedCompany.url}`);
+      return { ...item, url: unusedCompany.url };
+    }
+
+    // Tier 4: Assign ANY unused deep-path URL (not listing page)
+    const unusedDeep = anyDeepUrls.find((r) => !usedUrls.has(r.url));
+    if (unusedDeep) {
+      usedUrls.add(unusedDeep.url);
+      console.log(`[News URL] Deep URL fallback: ${unusedDeep.url}`);
+      return { ...item, url: unusedDeep.url };
+    }
+
+    // Tier 5: Reuse already-used news-domain URL (duplicate is better than empty)
+    if (newsDomainArticles.length > 0) {
+      console.log(`[News URL] Reusing news URL: ${newsDomainArticles[0].url}`);
+      return { ...item, url: newsDomainArticles[0].url };
+    }
+
+    // Tier 6: Reuse any non-listing deep URL
+    if (anyDeepUrls.length > 0) {
+      console.log(`[News URL] Reusing deep URL: ${anyDeepUrls[0].url}`);
+      return { ...item, url: anyDeepUrls[0].url };
+    }
+
+    return item;
+  });
+}
+
 export class ResearchService {
   async researchCompany(companyName: string, userId: string): Promise<CompanyResearch> {
     try {
@@ -65,7 +273,8 @@ export class ResearchService {
 ■ 「pains」は必ず5つ以上出力してください。${companyName}の業界・規模・ビジネスモデルに応じた具体的な経営課題を記載してください。
 ■ 「overview」と「business」は必ず2-3文以上で具体的に記載してください。「情報なし」や「不明」は絶対に出力しないでください。
 ■ 「homepage_url」は${companyName}の会社概要ページの直接URLを記載してください（例：https://example.co.jp/about や https://example.co.jp/company）。ルートURL（https://example.co.jp/）ではなく、会社概要・企業情報ページの直接リンクを優先してください。URLにハッシュフラグメント（#company等）が必要な場合はそれも含めてください。確信がない場合は空文字""にしてください。
-■ 「business_url」は${companyName}のサービス・製品紹介ページの直接URLを記載してください（例：https://example.co.jp/service や https://example.co.jp/products）。不明な場合は空文字""にしてください。`;
+■ 「business_url」は${companyName}のサービス・製品紹介ページの直接URLを記載してください（例：https://example.co.jp/service や https://example.co.jp/products）。不明な場合は空文字""にしてください。
+■ 【ニュースについて最重要ルール】本日は${new Date().toISOString().slice(0, 10)}です。未来の日付のニュースは絶対に作成しないでください。確実に知っている過去の事実のみを記載してください。ニュースURLは個別の記事ページのURL（例：https://example.co.jp/news/2025/article-title）を記載し、ニュース一覧ページ（例：https://example.co.jp/news/）は使わないでください。URLに確信がない場合は空文字""にしてください。捏造は厳禁です。`;
           const research = await geminiService.analyzeResearch(
             companyName,
             knowledgePrompt,
@@ -73,51 +282,48 @@ export class ResearchService {
             []
           );
 
-          // Knowledge-based research: Gemini may fabricate news URLs.
-          // Validate each URL first — keep valid ones, replace only invalid ones with Google Search.
+          // Knowledge-based research: Gemini may fabricate news URLs and content.
+          // Step 1: Validate each URL — reject listing pages, 404s, and soft-404s
+          // Step 2: Use Google Search to find real news URLs as replacements
           if (research.news) {
-            const newsUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-            const checkNewsUrl = async (url: string): Promise<boolean> => {
-              if (!url || url.trim() === '') return false;
-              try {
-                const controller = new AbortController();
-                const tid = setTimeout(() => controller.abort(), 3000);
-                const res = await fetch(url, {
-                  redirect: 'follow',
-                  signal: controller.signal,
-                  headers: { 'User-Agent': newsUA },
-                  cache: 'no-store' as RequestCache,
-                });
-                clearTimeout(tid);
-                return res.ok;
-              } catch {
-                return false;
-              }
-            };
-
             const newsValidation = research.news.map(async (item) => {
               if (item.url && item.url.trim() !== '') {
                 const isValid = await checkNewsUrl(item.url);
                 if (isValid) {
-                  console.log(`[News URL] Gemini URL valid, keeping: ${item.url}`);
+                  console.log(`[News URL] Gemini URL valid: ${item.url}`);
                   return item;
                 }
-                console.log(`[News URL] Gemini URL invalid: ${item.url}`);
+                console.log(`[News URL] Gemini URL rejected: ${item.url}`);
               }
-              // Invalid or empty → leave URL empty (UI won't show a link)
               return { ...item, url: '' };
             });
 
-            // Race news validation against a 5s timeout
             research.news = await Promise.race([
               Promise.all(newsValidation),
               new Promise<CompanyResearch['news']>((resolve) =>
                 setTimeout(() => {
-                  console.warn('[News URL] Validation timed out after 5s, keeping existing URLs');
+                  console.warn('[News URL] Validation timed out after 5s');
                   resolve(research.news || []);
                 }, 5000)
               ),
             ]);
+
+            // Google Search fallback for items with empty URLs
+            const missingCount = research.news.filter((n) => !n.url || n.url.trim() === '').length;
+            if (missingCount > 0) {
+              console.log(`[News URL] ${missingCount} items missing URLs, trying Google Search...`);
+              try {
+                const searchResults = await this.googleSearchWithUrls(companyName);
+                if (searchResults.length > 0) {
+                  research.news = matchNewsToSearchResults(research.news, searchResults);
+                }
+              } catch (err) {
+                console.warn('[News URL] Google Search fallback failed:', err);
+              }
+            }
+
+            const finalCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
+            console.log(`[News URL] Final: ${finalCount}/${research.news.length} items have URLs`);
           }
 
           // Knowledge-based research: Gemini may also fabricate homepage_url/business_url.
@@ -176,10 +382,8 @@ export class ResearchService {
         searchResultsWithUrls.map((r) => ({ title: r.title, url: r.url }))
       );
 
-      // Post-process: validate news URLs against actual search result URLs.
-      // Replace any invalid/fabricated URL with a best-match from search results.
+      // Post-process: validate news URLs, then fill missing ones from search results.
       if (research.news && searchResultsWithUrls.length > 0) {
-        // Normalize URLs for comparison (handle trailing slashes, protocol differences)
         const normalizeUrl = (url: string): string => {
           try {
             const parsed = new URL(url);
@@ -190,178 +394,47 @@ export class ResearchService {
         for (const r of searchResultsWithUrls) {
           validUrlMap.set(normalizeUrl(r.url), r.url);
         }
-        const usedUrls = new Set<string>();
 
-        research.news = research.news.map((item) => {
-          // URL is valid (came from Google search results) - check with normalization
-          if (item.url) {
-            const normalized = normalizeUrl(item.url);
-            const matchedOriginal = validUrlMap.get(normalized);
-            if (matchedOriginal) {
-              usedUrls.add(matchedOriginal);
-              return { ...item, url: matchedOriginal };
-            }
+        // Step 1: Verify Gemini URLs — keep if in search results, HTTP-check if not
+        const verifiedNews = await Promise.all(research.news.map(async (item) => {
+          if (!item.url || item.url.trim() === '') return item;
+
+          // Check if URL came from search results
+          const normalized = normalizeUrl(item.url);
+          const matchedOriginal = validUrlMap.get(normalized);
+          if (matchedOriginal) return { ...item, url: matchedOriginal };
+
+          // URL not in search results — could be slightly modified by Gemini.
+          // Reject listing pages, then HTTP-check the rest.
+          if (isListingPage(item.url)) {
+            console.log(`[News URL] Rejecting listing page: ${item.url}`);
+            return { ...item, url: '' };
           }
-
-          // Try to find a matching search result by title keyword overlap
-          const itemTitle = (item.title || '').toLowerCase();
-          // Japanese-aware keyword extraction: split on punctuation AND particles
-          const rawSegments = itemTitle
-            .split(/[\s　、。・「」『』（）()\[\]【】：:；;！!？?]+/)
-            .filter((w) => w.length >= 2);
-          const keywords: string[] = [];
-          for (const seg of rawSegments) {
-            keywords.push(seg);
-            // Split on Japanese particles for finer-grained matching
-            const subWords = seg.split(/[はがをにでとのもへよりからまで]/).filter((w) => w.length >= 2);
-            if (subWords.length > 1) keywords.push(...subWords);
-            // Extract year numbers (important for matching news dates)
-            const years = seg.match(/\d{4}/g);
-            if (years) keywords.push(...years);
+          const isValid = await checkNewsUrl(item.url);
+          if (isValid) {
+            console.log(`[News URL] Gemini URL valid (not in search results but HTTP OK): ${item.url}`);
+            return item;
           }
-
-          // Score each search result by keyword overlap
-          let bestMatch: SearchResultWithUrl | undefined;
-          let bestScore = 0;
-          for (const r of searchResultsWithUrls) {
-            if (usedUrls.has(r.url)) continue;
-            const rText = (r.title + ' ' + r.snippet).toLowerCase();
-            const score = keywords.filter((kw) => rText.includes(kw)).length;
-            if (score > bestScore) {
-              bestScore = score;
-              bestMatch = r;
-            }
-          }
-
-          if (bestMatch && bestScore >= 1) {
-            usedUrls.add(bestMatch.url);
-            return { ...item, url: bestMatch.url };
-          }
-
-          // Last resort 1: assign the first unused search result URL from news-like domains
-          const newsDomains = ['prtimes.jp', 'nikkei.com', 'itmedia.co.jp', 'techcrunch.com', 'japan.zdnet.com', 'businessinsider.jp', 'toyokeizai.net', 'diamond.jp', 'ascii.jp', 'watch.impress.co.jp', 'atmarkit.itmedia.co.jp', 'news.yahoo.co.jp', 'mainichi.jp', 'asahi.com', 'yomiuri.co.jp', 'sankei.com', 'nhk.or.jp', 'kyodonews.net', 'jiji.com', 'reuters.com', 'bloomberg.co.jp'];
-          const unusedNewsUrl = searchResultsWithUrls.find((r) => {
-            if (usedUrls.has(r.url)) return false;
-            try {
-              const host = new URL(r.url).hostname;
-              return newsDomains.some((d) => host.includes(d));
-            } catch { return false; }
-          });
-          if (unusedNewsUrl) {
-            usedUrls.add(unusedNewsUrl.url);
-            return { ...item, url: unusedNewsUrl.url };
-          }
-
-          // Last resort 2: assign ANY unused search result URL that looks like a specific article page
-          const anyUnusedUrl = searchResultsWithUrls.find((r) => {
-            if (usedUrls.has(r.url)) return false;
-            try {
-              const parsed = new URL(r.url);
-              const path = parsed.pathname.replace(/\/+$/, '');
-              const segments = path.split('/').filter(Boolean);
-              // Must be a deep path (specific article page, not a listing page)
-              if (segments.length < 2) return false;
-              // Skip company info pages
-              const skipPaths = ['/about', '/company', '/corporate', '/service', '/product', '/contact', '/privacy', '/terms'];
-              if (skipPaths.some((s) => path.includes(s))) return false;
-              // Skip news INDEX/listing pages (e.g., /news/, /news, /press/, /press-releases/)
-              // These are listing pages, not specific articles. Specific articles have deeper paths like /news/2024/article-slug
-              const lastSegment = segments[segments.length - 1];
-              const listingPages = ['news', 'press', 'press-releases', 'media', 'blog', 'topics', 'information', 'ir', 'investor'];
-              if (listingPages.includes(lastSegment)) return false;
-              return true;
-            } catch { return false; }
-          });
-          if (anyUnusedUrl) {
-            usedUrls.add(anyUnusedUrl.url);
-            return { ...item, url: anyUnusedUrl.url };
-          }
-
-          // Last resort 3: reuse already-used news/press URLs only if they point to specific articles
-          const anyNewsUrl = searchResultsWithUrls.find((r) => {
-            try {
-              const host = new URL(r.url).hostname;
-              const path = new URL(r.url).pathname.replace(/\/+$/, '');
-              const segments = path.split('/').filter(Boolean);
-              const isNews = newsDomains.some((d) => host.includes(d));
-              // Must be a specific article (deep path), not a listing page
-              const isDeepPath = segments.length >= 2;
-              if (!isDeepPath) return false;
-              // Even for news domains, skip listing pages
-              const lastSegment = segments[segments.length - 1];
-              const listingPages = ['news', 'press', 'press-releases', 'media', 'blog', 'topics'];
-              if (listingPages.includes(lastSegment)) return false;
-              return isNews || isDeepPath;
-            } catch { return false; }
-          });
-          if (anyNewsUrl) {
-            return { ...item, url: anyNewsUrl.url };
-          }
-
-          // No match found - leave URL empty
+          console.log(`[News URL] Gemini URL invalid: ${item.url}`);
           return { ...item, url: '' };
-        });
-      }
+        }));
 
-      // Post-process: fill remaining news items without URLs using Google news search
-      if (research.news && research.news.some((n) => !n.url || n.url.trim() === '')) {
-        const missingUrlItems = research.news.filter((n) => !n.url || n.url.trim() === '');
-        console.log(`[News URL] ${missingUrlItems.length} news items still missing URLs, running targeted search...`);
+        // Apply with 8s timeout
+        research.news = await Promise.race([
+          Promise.resolve(verifiedNews),
+          new Promise<CompanyResearch['news']>((resolve) =>
+            setTimeout(() => {
+              console.warn('[News URL] URL verification timed out');
+              resolve(research.news || []);
+            }, 8000)
+          ),
+        ]);
 
-        // Collect all already-used news URLs
-        const alreadyUsed = new Set(research.news.filter((n) => n.url).map((n) => n.url));
-
-        // Collect all news-domain URLs from search results that haven't been used yet
-        const newsDomains = ['prtimes.jp', 'nikkei.com', 'itmedia.co.jp', 'techcrunch.com', 'japan.zdnet.com', 'businessinsider.jp', 'toyokeizai.net', 'diamond.jp', 'ascii.jp', 'watch.impress.co.jp', 'atmarkit.itmedia.co.jp', 'news.yahoo.co.jp', 'mainichi.jp', 'asahi.com', 'yomiuri.co.jp', 'sankei.com', 'nhk.or.jp', 'kyodonews.net', 'jiji.com', 'reuters.com', 'bloomberg.co.jp'];
-        const allNewsUrls = searchResultsWithUrls
-          .filter((r) => {
-            try {
-              const host = new URL(r.url).hostname;
-              return newsDomains.some((d) => host.includes(d));
-            } catch { return false; }
-          })
-          .map((r) => r.url);
-
-        // Also collect deep-path URLs from the company domain as fallback
-        const allDeepUrls = searchResultsWithUrls
-          .filter((r) => {
-            try {
-              const path = new URL(r.url).pathname.replace(/\/+$/, '');
-              const depth = path.split('/').filter(Boolean).length;
-              return depth >= 2 && !path.includes('/about') && !path.includes('/company') && !path.includes('/corporate');
-            } catch { return false; }
-          })
-          .map((r) => r.url);
-
-        const candidateUrls = [...allNewsUrls, ...allDeepUrls];
-
-        // Assign URLs to news items that are missing them
-        research.news = research.news.map((item) => {
-          if (item.url && item.url.trim() !== '') return item;
-
-          // Find first unused candidate URL
-          const unusedUrl = candidateUrls.find((u) => !alreadyUsed.has(u));
-          if (unusedUrl) {
-            alreadyUsed.add(unusedUrl);
-            return { ...item, url: unusedUrl };
-          }
-
-          // If all are used, reuse any news URL (duplicates are better than no links)
-          if (candidateUrls.length > 0) {
-            return { ...item, url: candidateUrls[0] };
-          }
-
-          return item;
-        });
+        // Step 2: Fill empty URLs using shared matching logic
+        research.news = matchNewsToSearchResults(research.news, searchResultsWithUrls);
 
         const filledCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
-        console.log(`[News URL] After fill: ${filledCount}/${research.news.length} news items have URLs`);
-      }
-
-      // News items without URLs simply won't show a link in the UI
-      // No Google Search fallback — only direct links are used
-      if (research.news) {
-        console.log(`[News URL] ${research.news.filter(n => n.url && n.url.trim() !== '').length}/${research.news.length} news items have direct URLs`);
+        console.log(`[News URL] ${filledCount}/${research.news.length} news items have direct URLs`);
       }
 
       // Post-process: extract homepage/business URLs from search results if AI didn't find them

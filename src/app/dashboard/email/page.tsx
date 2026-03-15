@@ -8,7 +8,7 @@ import { apiClient } from '@/lib/api-client'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { ResearchReport } from './components/ResearchReport'
 import { EmailOutput } from './components/EmailOutput'
-import { UsageInfo, PLAN_LABELS } from '@/lib/types'
+import { UsageInfo } from '@/lib/types'
 import toast from 'react-hot-toast'
 
 type LeadSource = 'ウェビナー参加' | '資料ダウンロード' | 'お問い合わせ' | '展示会' | '紹介'
@@ -211,54 +211,40 @@ export default function EmailPage() {
           </p>
         </div>
 
-        {/* Usage Bar */}
-        {usage && (
-          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-300">
-                  {PLAN_LABELS[usage.plan]}プラン
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {usage.emailCount} / {usage.emailLimit} 件使用済み
-                </span>
+        {/* Over Limit - Upgrade CTA */}
+        {usage && isOverLimit && (
+          <div className="bg-gradient-to-r from-slate-800 to-slate-800 rounded-xl border border-red-500/30 p-5">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center">
+                <span className="text-lg">🚀</span>
               </div>
-              {usage.plan === 'free' && (
-                <Link
-                  href="/dashboard/pricing"
-                  className="text-[10px] font-semibold text-blue-400 hover:text-blue-300 transition-colors"
-                >
-                  アップグレード →
-                </Link>
-              )}
-            </div>
-            <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  usage.remaining <= 0
-                    ? 'bg-red-500'
-                    : usage.remaining <= 3
-                    ? 'bg-yellow-500'
-                    : 'bg-blue-500'
-                }`}
-                style={{
-                  width: `${Math.min(100, (usage.emailCount / usage.emailLimit) * 100)}%`,
-                }}
-              />
-            </div>
-            {isOverLimit && (
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-[10px] text-red-400 font-semibold">
-                  今月の生成上限に達しました
-                </span>
-                <Link
-                  href="/dashboard/pricing"
-                  className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 text-blue-400 hover:bg-blue-500/30 font-semibold transition-colors"
-                >
-                  プランをアップグレード
-                </Link>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-white mb-1">
+                  今月の無料枠（{usage.emailLimit}件）を使い切りました
+                </h3>
+                <p className="text-xs text-slate-400 mb-3">
+                  今月の生成数: <span className="text-red-400 font-bold">{usage.emailCount}件</span> / {usage.emailLimit}件
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Link
+                    href="/dashboard/pricing"
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 text-white text-sm font-bold hover:from-blue-700 hover:to-blue-600 transition-all shadow-lg shadow-blue-500/20"
+                  >
+                    💎 プランをアップグレード
+                  </Link>
+                  <div className="flex gap-2">
+                    <div className="px-3 py-2 rounded-lg bg-slate-700/50 border border-slate-600">
+                      <p className="text-[10px] text-slate-500">Starter</p>
+                      <p className="text-xs font-bold text-white">¥2,980<span className="text-[10px] text-slate-400">/月 100件</span></p>
+                    </div>
+                    <div className="px-3 py-2 rounded-lg bg-slate-700/50 border border-slate-600">
+                      <p className="text-[10px] text-slate-500">Pro</p>
+                      <p className="text-xs font-bold text-white">¥9,800<span className="text-[10px] text-slate-400">/月 500件</span></p>
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -404,8 +390,15 @@ export default function EmailPage() {
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 メール生成中...
               </span>
-            ) : isOverLimit ? '生成上限に達しました' : 'メール生成'}
+            ) : isOverLimit ? '🔒 今月の生成上限に達しました（アップグレードで解除）' : 'メール生成'}
           </button>
+
+          {/* Subtle usage counter below button */}
+          {usage && !isOverLimit && (
+            <p className="text-center text-xs text-slate-500">
+              今月の生成数: <span className="text-slate-400 font-medium">{usage.emailCount}件</span>
+            </p>
+          )}
         </form>
       </div>
     )

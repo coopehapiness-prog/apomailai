@@ -65,6 +65,7 @@ export default function SettingsPage() {
     benefit: '',
     price: '',
     results: '',
+    documentUrl: '',
   })
 
   const [promptSettings, setPromptSettings] = useState({
@@ -78,39 +79,6 @@ export default function SettingsPage() {
   const [scrapeType, setScrapeType] = useState<'case_study' | 'service'>('case_study')
   const [scrapedPages, setScrapedPages] = useState<Array<{ url: string; title: string; content: string }>>([])
   const [selectedCaseStudies, setSelectedCaseStudies] = useState<Set<number>>(new Set())
-
-  // Password change state
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
-  })
-  const [changingPassword, setChangingPassword] = useState(false)
-
-  // Settings sharing state
-  const [shareInfo, setShareInfo] = useState<{
-    domain: string
-    isFreeEmail: boolean
-    currentUserEmail?: string
-    teammates: Array<{ id: string; email: string }>
-  } | null>(null)
-  const [sharingLoading, setSharingLoading] = useState(false)
-
-  // Fetch sharing info on mount
-  useEffect(() => {
-    const fetchShareInfo = async () => {
-      try {
-        const res = await fetch('/api/settings/share', { credentials: 'same-origin' })
-        if (res.ok) {
-          const data = await res.json()
-          setShareInfo(data)
-        }
-      } catch {
-        // ignore
-      }
-    }
-    fetchShareInfo()
-  }, [])
 
   useEffect(() => {
     if (!settings) return
@@ -130,6 +98,7 @@ export default function SettingsPage() {
       benefit: readSetting(settings, 'service_benefit', 'serviceBenefit') || settings.serviceInfo?.strengths?.join('、') || '',
       price: readSetting(settings, 'service_price', 'servicePrice') || settings.serviceInfo?.price || '',
       results: readSetting(settings, 'service_results', 'serviceResults') || settings.serviceInfo?.results || '',
+      documentUrl: readSetting(settings, 'service_document_url', 'serviceDocumentUrl') || '',
     })
 
     setCaseStudies(readSetting(settings, 'case_studies') || '')
@@ -180,6 +149,7 @@ export default function SettingsPage() {
         serviceBenefit: serviceInfo.benefit,
         servicePrice: serviceInfo.price,
         serviceResults: serviceInfo.results,
+        serviceDocumentUrl: serviceInfo.documentUrl,
       } as Partial<CustomSettings>)
       toast.success('サービス情報を保存しました')
     } catch {
@@ -690,6 +660,23 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+
+          <div>
+            <label htmlFor="documentUrl" className="block text-sm font-medium text-slate-300 mb-2">
+              サービス資料URL
+            </label>
+            <input
+              id="documentUrl"
+              type="url"
+              value={serviceInfo.documentUrl}
+              onChange={(e) => setServiceInfo((prev) => ({ ...prev, documentUrl: e.target.value }))}
+              placeholder="例: https://example.com/download/service-guide.pdf"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <p className="text-[10px] text-slate-500 mt-1">
+              入力すると、初回メール（流入直後）の本文にこの資料リンクが自動で挿入されます。資料ダウンロード経由のリードには特に効果的です。
+            </p>
+          </div>
         </div>
 
         {/* Saved values indicator */}
@@ -711,6 +698,9 @@ export default function SettingsPage() {
               )}
               {readSetting(settings, 'service_results', 'serviceResults') && (
                 <div>実績: {readSetting(settings, 'service_results', 'serviceResults')}</div>
+              )}
+              {readSetting(settings, 'service_document_url', 'serviceDocumentUrl') && (
+                <div>資料URL: {readSetting(settings, 'service_document_url', 'serviceDocumentUrl')}</div>
               )}
             </div>
           </div>
@@ -1154,188 +1144,6 @@ export default function SettingsPage() {
         )}
       </section>
 
-      {/* ===== Account Settings ===== */}
-      <section className="bg-slate-800 rounded-lg border border-slate-700 p-6 space-y-6">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          🔐 アカウント設定
-        </h2>
-
-        {/* Password Change */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-slate-300">パスワード変更</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">現在のパスワード</label>
-              <input
-                type="password"
-                value={passwordForm.currentPassword}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
-                placeholder="現在のパスワード"
-                className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">新しいパスワード</label>
-              <input
-                type="password"
-                value={passwordForm.newPassword}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
-                placeholder="8文字以上"
-                className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">新しいパスワード（確認）</label>
-              <input
-                type="password"
-                value={passwordForm.confirmPassword}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                placeholder="もう一度入力"
-                className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-          </div>
-          <button
-            disabled={changingPassword || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
-            onClick={async () => {
-              if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-                toast.error('新しいパスワードが一致しません')
-                return
-              }
-              if (passwordForm.newPassword.length < 8) {
-                toast.error('パスワードは8文字以上で入力してください')
-                return
-              }
-              setChangingPassword(true)
-              try {
-                const res = await fetch('/api/auth/change-password', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'same-origin',
-                  body: JSON.stringify({
-                    currentPassword: passwordForm.currentPassword,
-                    newPassword: passwordForm.newPassword,
-                  }),
-                })
-                const data = await res.json()
-                if (res.ok) {
-                  toast.success('パスワードを変更しました')
-                  setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
-                } else {
-                  toast.error(data.error || 'パスワード変更に失敗しました')
-                }
-              } catch {
-                toast.error('パスワード変更に失敗しました')
-              } finally {
-                setChangingPassword(false)
-              }
-            }}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
-          >
-            {changingPassword ? '変更中...' : 'パスワードを変更'}
-          </button>
-        </div>
-
-        {/* Settings Sharing */}
-        <div className="border-t border-slate-700 pt-6 space-y-3">
-          <h3 className="text-sm font-semibold text-slate-300">カスタム設定の共有（同一ドメイン）</h3>
-          <p className="text-xs text-slate-500">
-            同じメールドメインでログインしているチームメンバーと、サービス情報・事例・プロンプトなどの設定を共有できます。
-            <br />
-            ※ 送信者名・役職・メールアドレスなどの個人情報は共有されません。
-          </p>
-
-          {shareInfo?.isFreeEmail ? (
-            <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3">
-              <p className="text-xs text-yellow-400">
-                ⚠️ フリーメールアドレス（{shareInfo.domain}）では設定共有機能は利用できません。会社ドメインのメールアドレスでログインしてください。
-              </p>
-            </div>
-          ) : shareInfo ? (
-            <div className="space-y-3">
-              <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
-                <p className="text-xs text-slate-400 mb-2">
-                  ドメイン: <span className="text-blue-400 font-semibold">@{shareInfo.domain}</span>
-                  {shareInfo.teammates.length > 0
-                    ? ` （チームメンバー ${shareInfo.teammates.length}人）`
-                    : ' （他のメンバーはまだ登録されていません）'}
-                </p>
-                {shareInfo.teammates.length > 0 && (
-                  <div className="space-y-1.5">
-                    {shareInfo.teammates.map((teammate) => (
-                      <div key={teammate.id} className="flex items-center justify-between bg-slate-800 rounded-md px-3 py-2">
-                        <span className="text-xs text-slate-300">{teammate.email}</span>
-                        <button
-                          disabled={sharingLoading}
-                          onClick={async () => {
-                            if (!confirm(`${teammate.email}の設定をインポートしますか？\nサービス情報・事例・プロンプトなどが上書きされます。`)) return
-                            setSharingLoading(true)
-                            try {
-                              const res = await fetch('/api/settings/share', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                credentials: 'same-origin',
-                                body: JSON.stringify({ action: 'import', fromUserId: teammate.id }),
-                              })
-                              const data = await res.json()
-                              if (res.ok) {
-                                toast.success(data.message)
-                                fetchSettings()
-                              } else {
-                                toast.error(data.error || 'インポートに失敗しました')
-                              }
-                            } catch {
-                              toast.error('インポートに失敗しました')
-                            } finally {
-                              setSharingLoading(false)
-                            }
-                          }}
-                          className="text-[10px] px-2.5 py-1 bg-slate-700 hover:bg-blue-600 disabled:opacity-50 text-slate-300 hover:text-white rounded-md transition-colors font-medium"
-                        >
-                          設定を取り込む
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {shareInfo.teammates.length > 0 && (
-                <button
-                  disabled={sharingLoading}
-                  onClick={async () => {
-                    if (!confirm(`同じドメイン（@${shareInfo.domain}）の全メンバーにカスタム設定を共有しますか？\n※ 相手のサービス情報・事例・プロンプトが上書きされます。`)) return
-                    setSharingLoading(true)
-                    try {
-                      const res = await fetch('/api/settings/share', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'same-origin',
-                        body: JSON.stringify({ action: 'export' }),
-                      })
-                      const data = await res.json()
-                      if (res.ok) {
-                        toast.success(data.message)
-                      } else {
-                        toast.error(data.error || '共有に失敗しました')
-                      }
-                    } catch {
-                      toast.error('共有に失敗しました')
-                    } finally {
-                      setSharingLoading(false)
-                    }
-                  }}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
-                >
-                  {sharingLoading ? '処理中...' : `全メンバーに自分の設定を共有（${shareInfo.teammates.length}人）`}
-                </button>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-slate-500">読み込み中...</p>
-          )}
-        </div>
-      </section>
     </div>
   )
 }

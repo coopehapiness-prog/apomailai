@@ -10,6 +10,7 @@ const UpdateSettingsSchema = z.object({
   phoneNumber: z.string().optional(),
   senderEmail: z.string().optional(),
   schedulingUrl: z.string().optional(),
+  serviceDocumentUrl: z.string().optional(),
   signature: z.string().optional(),
   serviceName: z.string().optional(),
   serviceDescription: z.string().optional(),
@@ -119,6 +120,7 @@ export async function PATCH(request: NextRequest) {
     if (validated.phoneNumber !== undefined) updateData.sender_phone = validated.phoneNumber;
     if (validated.senderEmail !== undefined) updateData.sender_email = validated.senderEmail;
     if (validated.schedulingUrl !== undefined) updateData.scheduling_url = validated.schedulingUrl;
+    if (validated.serviceDocumentUrl !== undefined) updateData.service_document_url = validated.serviceDocumentUrl;
     if (validated.signature !== undefined) updateData.signature = validated.signature;
     if (validated.serviceName !== undefined) updateData.service_name = validated.serviceName;
     if (validated.serviceDescription !== undefined) updateData.service_description = validated.serviceDescription;

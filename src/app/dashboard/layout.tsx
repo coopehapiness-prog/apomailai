@@ -19,10 +19,10 @@ export default function DashboardLayout({
     { label: 'メール生成履歴', href: '/dashboard/history' },
     { label: 'リード管理・分析', href: '/dashboard/leads', hidden: true },
     { label: 'カスタム設定', href: '/dashboard/settings' },
-    { label: '💎 プラン', href: '/dashboard/pricing' },
   ]
 
-  const isActiveTab = (href: string) => pathname === href
+  const isActiveTab = (href: string) => pathname === href || pathname?.startsWith(href + '/')
+  const isMyPage = pathname === '/dashboard/mypage'
 
   const handleLogout = async () => {
     setLoggingOut(true)
@@ -61,10 +61,20 @@ export default function DashboardLayout({
               ))}
             </div>
 
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-400 hidden sm:inline">
-                {session?.user?.email}
-              </span>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/dashboard/mypage"
+                className={`relative z-[110] flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  isMyPage
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="hidden sm:inline">マイページ</span>
+              </Link>
               <button
                 type="button"
                 onClick={handleLogout}

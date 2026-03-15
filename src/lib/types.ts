@@ -16,6 +16,7 @@ export interface CustomSettings {
   sender_email?: string
   sender_phone?: string
   scheduling_url?: string
+  service_document_url?: string
   service_name: string
   service_description: string
   service_benefit: string

@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
         tone: mySettings.tone,
         prompt: mySettings.prompt,
         scheduling_url: mySettings.scheduling_url,
+        service_document_url: mySettings.service_document_url,
         updated_at: new Date().toISOString(),
       };
 
@@ -182,6 +183,7 @@ export async function POST(request: NextRequest) {
         tone: theirSettings.tone,
         prompt: theirSettings.prompt,
         scheduling_url: theirSettings.scheduling_url,
+        service_document_url: theirSettings.service_document_url,
         updated_at: new Date().toISOString(),
       };
 
