@@ -43,7 +43,16 @@ function isListingPage(url: string): boolean {
     const segments = path.split('/').filter(Boolean);
     if (segments.length === 0) return false;
     const lastSeg = segments[segments.length - 1];
-    return LISTING_SEGMENTS.includes(lastSeg);
+    // Direct listing page (e.g., /news, /press)
+    if (LISTING_SEGMENTS.includes(lastSeg)) return true;
+    // Pagination pages (e.g., /news/page/2, /news/2)
+    if (/^(page|\d+)$/.test(lastSeg) && segments.length <= 3) return true;
+    // Category/tag pages (e.g., /news/category/press, /news/tag/ai)
+    if (segments.some((s) => ['category', 'tag', 'tags', 'archive', 'archives', 'page'].includes(s))) return true;
+    // Year/month archive pages (e.g., /news/2025, /news/2025/03)
+    if (segments.length === 2 && /^\d{4}$/.test(lastSeg)) return true;
+    if (segments.length === 3 && /^\d{4}$/.test(segments[1]) && /^\d{1,2}$/.test(segments[2])) return true;
+    return false;
   } catch {
     return false;
   }
@@ -387,14 +396,18 @@ async function scrapeCompanyNewsUrls(
     }
   }
 
-  // 2. Try PR TIMES search for the company
+  // 2. Try PR TIMES search for the company (use full company name for accuracy)
   try {
-    const prtimesUrl = `https://prtimes.jp/main/action.php?run=html&page=searchkey&search_word=${encodeURIComponent(companyName)}`;
+    const prtimesSearchName = companyName; // Always use full name to avoid noise
+    const prtimesUrl = `https://prtimes.jp/main/action.php?run=html&page=searchkey&search_word=${encodeURIComponent(prtimesSearchName)}`;
     const html = await fetchPage(prtimesUrl);
     if (html.length > 1000) {
       const links = extractArticleLinks(html, 'https://prtimes.jp');
-      // Filter to only prtimes.jp article links
-      const prtimesLinks = links.filter((l) => l.url.includes('prtimes.jp/main/html/rd/'));
+      // Filter to only prtimes.jp article links AND relevant to the company
+      const prtimesLinks = links.filter((l) =>
+        l.url.includes('prtimes.jp/main/html/rd/') &&
+        isRelevantToCompany(l, companyName)
+      );
       if (prtimesLinks.length > 0) {
         console.log(`[News Scrape] Found ${prtimesLinks.length} PR TIMES articles for ${companyName}`);
         results.push(...prtimesLinks);
@@ -961,6 +974,15 @@ export class ResearchService {
           }
 
           return item; // No replacement available
+        });
+
+        // Final safety: remove any URLs that are still listing pages (catch edge cases)
+        research.news = research.news.map((item) => {
+          if (item.url && isListingPage(item.url)) {
+            console.log(`[News URL] Final filter: removing listing page URL: ${item.url}`);
+            return { ...item, url: '' };
+          }
+          return item;
         });
 
         const filledCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
