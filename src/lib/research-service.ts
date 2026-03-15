@@ -1577,8 +1577,9 @@ export class ResearchService {
       { q: `${companyName} 最新ニュース ${currentYear - 1} ${currentYear}`, dateRestrict: 'm6', sort: 'date' },
       { q: `${companyName} プレスリリース 新サービス 発表`, dateRestrict: 'm6', sort: 'date' },
       { q: `${companyName} 資金調達 提携 事業拡大`, dateRestrict: 'm6', sort: 'date' },
-      { q: `${companyName} IR 決算 業績 経営`, dateRestrict: 'm6', sort: 'date' },
+      { q: `${companyName} IR 決算発表 業績 四半期決算 有価証券報告書`, dateRestrict: 'm6', sort: 'date' },
       { q: `${companyName} プレスリリース site:prtimes.jp`, dateRestrict: 'm6', sort: 'date' },
+      { q: `${companyName} 決算 中期経営計画 株主総会 業績予想`, dateRestrict: 'm12', sort: 'date' },
     ];
 
     const results: SearchResultWithUrl[] = [];

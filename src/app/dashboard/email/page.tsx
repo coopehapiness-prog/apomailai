@@ -564,10 +564,14 @@ export default function EmailPage() {
                     rel="noopener noreferrer"
                     className="text-[11px] text-blue-400 hover:text-blue-300 hover:underline line-clamp-1 flex-1"
                   >
+                    {idx === newsItems.length - 1 && <span className="text-[9px] bg-emerald-900/60 text-emerald-400 px-1 py-0.5 rounded mr-1">IR</span>}
                     {news.title} <span className="text-[9px]">{'↗'}</span>
                   </a>
                 ) : (
-                  <span className="text-[11px] text-slate-300 line-clamp-1 flex-1">{news.title}</span>
+                  <span className="text-[11px] text-slate-300 line-clamp-1 flex-1">
+                    {idx === newsItems.length - 1 && <span className="text-[9px] bg-emerald-900/60 text-emerald-400 px-1 py-0.5 rounded mr-1">IR</span>}
+                    {news.title}
+                  </span>
                 )}
               </div>
             ))
