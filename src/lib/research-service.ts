@@ -121,6 +121,105 @@ async function checkNewsUrl(url: string): Promise<boolean> {
   }
 }
 
+/** Check if a news title is generic/vague and should be replaced with the actual article title */
+function isGenericTitle(title: string): boolean {
+  if (!title || title.trim().length === 0) return true;
+  const cleaned = title.trim()
+    .replace(/^\d{4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2}\s*/, '') // Remove date prefix
+    .replace(/^\d{4}[\.\-\/]\d{1,2}\s*/, '') // Remove year-month prefix
+    .replace(/^📅\s*\d{4}年\d{1,2}月\d{1,2}日\s*/, '') // Remove emoji date prefix
+    .trim();
+  const genericPatterns = [
+    /^プレスリリース$/i,
+    /^ニュース$/i,
+    /^お知らせ$/i,
+    /^press\s*release$/i,
+    /^news$/i,
+    /^topics?$/i,
+    /^information$/i,
+    /^人事[・\s]*採用$/,
+    /^人事[・\s]*異動$/,
+    /^ir$/i,
+    /^ir\s*(情報|ニュース)$/,
+  ];
+  return genericPatterns.some((p) => p.test(cleaned)) || cleaned.length <= 4;
+}
+
+/** Fetch the actual page title from a URL */
+async function fetchPageTitle(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': NEWS_UA },
+      cache: 'no-store' as RequestCache,
+    });
+    clearTimeout(tid);
+    if (!res.ok) return null;
+    const text = await res.text();
+    const chunk = text.substring(0, 15000);
+    const titleMatch = chunk.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (!titleMatch) return null;
+    let title = titleMatch[1].trim()
+      .replace(/\s+/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&#\d+;/g, '');
+    // Remove site name suffix (e.g., "記事タイトル | PR TIMES", "記事タイトル - 会社名")
+    title = title.replace(/\s*[|\-–—]\s*(PR\s*TIMES|PRTIMES|プレスリリース|ニュース|お知らせ|News|Press).*/i, '').trim();
+    // Also try to remove company name suffix
+    title = title.replace(/\s*[|\-–—]\s*[^|\-–—]+$/, '').trim();
+    if (title.length < 5) return null;
+    if (SOFT_404_KEYWORDS.some((kw) => title.toLowerCase().includes(kw))) return null;
+    return title;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Enrich generic news titles with actual article titles.
+ * Uses search results first (by URL matching), then fetches from the page itself.
+ */
+async function enrichNewsTitles(
+  news: CompanyResearch['news'],
+  searchResults: SearchResultWithUrl[],
+): Promise<CompanyResearch['news']> {
+  if (!news || news.length === 0) return news;
+
+  // Build URL → search result title map
+  const urlTitleMap = new Map<string, string>();
+  for (const r of searchResults) {
+    if (r.url && r.title) {
+      urlTitleMap.set(r.url, r.title);
+    }
+  }
+
+  return Promise.all(news.map(async (item) => {
+    if (!isGenericTitle(item.title)) return item;
+    if (!item.url || item.url.trim() === '') return item;
+
+    // 1. Try search result title
+    const searchTitle = urlTitleMap.get(item.url);
+    if (searchTitle && !isGenericTitle(searchTitle)) {
+      console.log(`[News Title] Enriched from search: "${item.title}" → "${searchTitle}"`);
+      return { ...item, title: searchTitle };
+    }
+
+    // 2. Fetch actual page title
+    const pageTitle = await fetchPageTitle(item.url);
+    if (pageTitle) {
+      console.log(`[News Title] Enriched from page: "${item.title}" → "${pageTitle}"`);
+      return { ...item, title: pageTitle };
+    }
+
+    return item;
+  }));
+}
+
 /**
  * Scrape a company's news/press page and PR TIMES to find real article URLs.
  * This is used as a fallback when Google Search API is not available.
@@ -500,6 +599,16 @@ export class ResearchService {
 
             const finalCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
             console.log(`[News] Final: ${finalCount}/${research.news.length} items have real URLs`);
+
+            // Enrich generic titles with actual article titles
+            try {
+              research.news = await Promise.race([
+                enrichNewsTitles(research.news, realArticles),
+                new Promise<CompanyResearch['news']>((resolve) =>
+                  setTimeout(() => resolve(research.news || []), 6000)
+                ),
+              ]);
+            } catch { /* ignore */ }
           }
 
           // Knowledge-based research: Gemini may also fabricate homepage_url/business_url.
@@ -667,6 +776,21 @@ export class ResearchService {
 
         const filledCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
         console.log(`[News URL] ${filledCount}/${research.news.length} news items have direct URLs`);
+
+        // Enrich generic titles (e.g., "プレスリリース") with actual article titles
+        try {
+          research.news = await Promise.race([
+            enrichNewsTitles(research.news, searchResultsWithUrls),
+            new Promise<CompanyResearch['news']>((resolve) =>
+              setTimeout(() => {
+                console.warn('[News Title] Title enrichment timed out');
+                resolve(research.news || []);
+              }, 6000)
+            ),
+          ]);
+        } catch (e) {
+          console.warn('[News Title] Title enrichment failed:', e);
+        }
       }
 
       // Post-process: extract homepage/business URLs from search results if AI didn't find them
