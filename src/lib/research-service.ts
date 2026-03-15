@@ -79,31 +79,74 @@ function isNewsDomain(url: string): boolean {
 /** Check if a search result is relevant to the target company */
 function isRelevantToCompany(result: SearchResultWithUrl, companyName: string): boolean {
   const text = `${result.title} ${result.snippet}`.toLowerCase();
-  // Extract core name variations from company name
-  const names: string[] = [];
-  // Full name
-  names.push(companyName.toLowerCase());
-  // Without prefix (株式会社, 合同会社 etc.)
+  const titleLower = (result.title || '').toLowerCase();
+
+  // Extract company name prefix (株式会社 etc.)
+  const prefixMatch = companyName.match(/^(株式会社|合同会社|有限会社|一般社団法人|一般財団法人)/);
+  const prefix = prefixMatch ? prefixMatch[1] : '';
+
+  // Extract core name without prefix/suffix
   const coreName = companyName
     .replace(/^(株式会社|合同会社|有限会社|一般社団法人|一般財団法人)\s*/, '')
     .replace(/\s*(株式会社|合同会社|有限会社|Inc\.|Co\.,?\s*Ltd\.?)$/i, '')
     .trim();
-  if (coreName.length >= 2) names.push(coreName.toLowerCase());
-  // English/romaji variations (e.g., "AND STORY" from "株式会社AND STORY")
-  const englishMatch = companyName.match(/[A-Za-z][A-Za-z\s&\-\.]+[A-Za-z]/);
-  if (englishMatch && englishMatch[0].trim().length >= 3) {
-    names.push(englishMatch[0].trim().toLowerCase());
-  }
-  // Check if URL domain contains company name hint
+
+  // Check if URL domain contains company name → always relevant (own domain)
   try {
     const host = new URL(result.url).hostname;
-    // If the result is from the company's own domain, it's relevant
     const domainCore = host.replace(/^www\./, '').split('.')[0].toLowerCase();
     const nameAlpha = coreName.toLowerCase().replace(/[^a-z0-9]/g, '');
     if (nameAlpha.length >= 3 && domainCore.includes(nameAlpha)) return true;
   } catch { /* ignore */ }
-  // Check if title/snippet mentions the company name
-  return names.some((name) => text.includes(name));
+
+  // Full company name match (most reliable)
+  if (text.includes(companyName.toLowerCase())) return true;
+
+  // For short core names (≤ 4 chars like ナイル, エモ, etc.), require stricter matching
+  // to avoid false positives (e.g., "ナイル川" matching "株式会社ナイル")
+  const isShortName = coreName.length <= 4;
+
+  if (isShortName) {
+    // Require "prefix + coreName" (e.g., "株式会社ナイル") or coreName in business context
+    const fullName = prefix ? `${prefix}${coreName}`.toLowerCase() : '';
+    if (fullName && text.includes(fullName)) return true;
+
+    // PR TIMES format: title often starts with "CompanyName、announcement..." or "CompanyName,"
+    // Check if coreName appears at the very beginning of the title (before first comma/、)
+    const titleStart = titleLower.split(/[、,]/)[0];
+    if (titleStart.includes(coreName.toLowerCase()) && titleStart.length < coreName.length + 15) return true;
+
+    // Check for coreName followed by business-context words
+    const businessPatterns = [
+      `${coreName.toLowerCase()}、`,     // "ナイル、新サービスを..."
+      `${coreName.toLowerCase()}が`,     // "ナイルが発表..."
+      `${coreName.toLowerCase()}は`,     // "ナイルは..."
+      `${coreName.toLowerCase()}の`,     // "ナイルの決算..."
+      `「${coreName.toLowerCase()}」`,   // "「ナイル」を導入"
+      `${coreName.toLowerCase()}（`,     // "ナイル（東京都..."
+    ];
+    if (businessPatterns.some((p) => text.includes(p))) return true;
+
+    // English name match (if available)
+    const englishMatch = companyName.match(/[A-Za-z][A-Za-z\s&\-\.]+[A-Za-z]/);
+    if (englishMatch && englishMatch[0].trim().length >= 3) {
+      if (text.includes(englishMatch[0].trim().toLowerCase())) return true;
+    }
+
+    // Short name not found in reliable context → not relevant
+    return false;
+  }
+
+  // For longer names (> 4 chars), simple substring match is sufficient
+  if (coreName.length >= 2 && text.includes(coreName.toLowerCase())) return true;
+
+  // English/romaji variations
+  const englishMatch = companyName.match(/[A-Za-z][A-Za-z\s&\-\.]+[A-Za-z]/);
+  if (englishMatch && englishMatch[0].trim().length >= 3) {
+    if (text.includes(englishMatch[0].trim().toLowerCase())) return true;
+  }
+
+  return false;
 }
 
 /** Extract keywords from a Japanese title for fuzzy matching */
@@ -1864,14 +1907,21 @@ export class ResearchService {
     }
 
     // Queries: all news-focused with dateRestrict for freshness (m6 = last 6 months)
+    // Use quoted company name for short names to avoid false positives
     const currentYear = new Date().getFullYear();
+    const coreName = companyName
+      .replace(/^(株式会社|合同会社|有限会社|一般社団法人|一般財団法人)\s*/, '')
+      .replace(/\s*(株式会社|合同会社|有限会社|Inc\.|Co\.,?\s*Ltd\.?)$/i, '')
+      .trim();
+    // For short names (≤ 4 chars), use exact match with quotes to reduce noise
+    const searchName = coreName.length <= 4 ? `"${companyName}"` : companyName;
     const queries: Array<{ q: string; dateRestrict?: string; sort?: string }> = [
-      { q: `${companyName} 最新ニュース ${currentYear - 1} ${currentYear}`, dateRestrict: 'm6', sort: 'date' },
-      { q: `${companyName} プレスリリース 新サービス 発表`, dateRestrict: 'm6', sort: 'date' },
-      { q: `${companyName} 資金調達 提携 事業拡大`, dateRestrict: 'm6', sort: 'date' },
-      { q: `${companyName} IR 決算発表 業績 四半期決算 有価証券報告書`, dateRestrict: 'm6', sort: 'date' },
-      { q: `${companyName} プレスリリース site:prtimes.jp`, dateRestrict: 'm6', sort: 'date' },
-      { q: `${companyName} 決算 中期経営計画 株主総会 業績予想`, dateRestrict: 'm12', sort: 'date' },
+      { q: `${searchName} 最新ニュース ${currentYear - 1} ${currentYear}`, dateRestrict: 'm6', sort: 'date' },
+      { q: `${searchName} プレスリリース 新サービス 発表`, dateRestrict: 'm6', sort: 'date' },
+      { q: `${searchName} 資金調達 提携 事業拡大`, dateRestrict: 'm6', sort: 'date' },
+      { q: `${searchName} IR 決算発表 業績 四半期決算 有価証券報告書`, dateRestrict: 'm6', sort: 'date' },
+      { q: `${searchName} プレスリリース site:prtimes.jp`, dateRestrict: 'm6', sort: 'date' },
+      { q: `${searchName} 決算 中期経営計画 株主総会 業績予想`, dateRestrict: 'm12', sort: 'date' },
     ];
 
     const results: SearchResultWithUrl[] = [];
