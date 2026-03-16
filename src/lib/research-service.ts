@@ -1865,9 +1865,12 @@ export class ResearchService {
     // Never use Google Search fallback URLs — they are not direct links.
     // When a URL can't be found, leave it empty so the UI won't show a broken link.
 
-    // Save original Gemini URLs before validation (to restore on timeout/error)
+    // Save original Gemini URLs before validation (to restore on timeout ONLY if validation hasn't completed)
     const originalHomepageUrl = research.homepage_url || '';
     const originalBusinessUrl = research.business_url || '';
+    // Flag: set to true once validation logic has explicitly decided on URLs
+    // If timeout fires AFTER this is true, it should NOT restore fabricated URLs
+    let validationComplete = false;
 
     try {
 
@@ -1899,20 +1902,54 @@ export class ResearchService {
             const oldUrl = research.homepage_url || '(empty)';
             console.log(`[Knowledge URL] homepage_url invalid: ${oldUrl}`);
 
-            // Try to probe the domain for a valid company page before falling back to Google Search
+            // Try to probe the domain for a valid company page
+            let domainReachable = false;
             if (probeDomain) {
-              const domainReachable = await quickCheck(`https://${probeDomain}`);
-              if (domainReachable) {
-                console.log(`[Knowledge URL] Domain ${probeDomain} reachable, probing for company page...`);
-                const betterUrl = await probeCompanyInfoUrl(probeDomain);
-                research.homepage_url = betterUrl || `https://${probeDomain}`;
-                console.log(`[Knowledge URL] homepage_url → ${research.homepage_url}`);
-              } else {
-                research.homepage_url = '';
-                console.log(`[Knowledge URL] Domain unreachable → Google Search fallback`);
-              }
+              domainReachable = await quickCheck(`https://${probeDomain}`);
+            }
+
+            if (probeDomain && domainReachable) {
+              console.log(`[Knowledge URL] Domain ${probeDomain} reachable, probing for company page...`);
+              const betterUrl = await probeCompanyInfoUrl(probeDomain);
+              research.homepage_url = betterUrl || `https://${probeDomain}`;
+              console.log(`[Knowledge URL] homepage_url → ${research.homepage_url}`);
             } else {
+              // Domain doesn't exist or unreachable — try common domain patterns
+              console.log(`[Knowledge URL] Domain ${probeDomain || '(none)'} unreachable, trying domain guesses...`);
               research.homepage_url = '';
+
+              // Try common domain patterns for the company
+              {
+                const coreName = companyName
+                  .replace(/^(株式会社|合同会社|有限会社|一般社団法人|一般財団法人)\s*/, '')
+                  .replace(/\s*(株式会社|合同会社|有限会社|Inc\.|Co\.,?\s*Ltd\.?)$/i, '')
+                  .trim()
+                  .toLowerCase()
+                  .replace(/\s+/g, '-');
+                const domainGuesses = [
+                  `${coreName}.co.jp`, `${coreName}.jp`, `${coreName}.com`,
+                  `${coreName}.io`, `${coreName}.net`,
+                ];
+                for (const guess of domainGuesses) {
+                  const ok = await quickCheck(`https://${guess}`);
+                  if (ok) {
+                    probeDomain = guess;
+                    const betterUrl = await probeCompanyInfoUrl(guess);
+                    research.homepage_url = betterUrl || `https://${guess}`;
+                    console.log(`[Knowledge URL] Found via domain guess: ${research.homepage_url}`);
+                    break;
+                  }
+                  // Also try www. prefix
+                  const okWww = await quickCheck(`https://www.${guess}`);
+                  if (okWww) {
+                    probeDomain = `www.${guess}`;
+                    const betterUrl = await probeCompanyInfoUrl(`www.${guess}`);
+                    research.homepage_url = betterUrl || `https://www.${guess}`;
+                    console.log(`[Knowledge URL] Found via domain guess (www): ${research.homepage_url}`);
+                    break;
+                  }
+                }
+              }
             }
           } else if (research.homepage_url && isRootUrl(research.homepage_url)) {
             // Valid but root URL → try to find a more specific company info page
@@ -2015,16 +2052,28 @@ export class ResearchService {
               // Keep existing URL on probe failure
             }
           }
+
+          // Mark validation as complete - URLs have been explicitly decided
+          validationComplete = true;
+          console.log(`[Knowledge URL] Validation complete: homepage=${research.homepage_url || '(empty)'}, business=${research.business_url || '(empty)'}`);
         })(),
         new Promise<void>((resolve) =>
           setTimeout(() => {
-            console.warn('[Knowledge URL] Validation timed out after 12s, restoring original URLs');
-            // On timeout: restore Gemini's original URLs (better than empty)
-            if (!research.homepage_url || research.homepage_url.trim() === '') {
-              research.homepage_url = originalHomepageUrl;
-            }
-            if (!research.business_url || research.business_url.trim() === '') {
-              research.business_url = originalBusinessUrl;
+            if (validationComplete) {
+              // Validation already finished, don't override its decisions
+              console.log('[Knowledge URL] Timeout fired but validation already complete, keeping validated URLs');
+            } else {
+              // Validation still in progress (e.g., slow domain probing)
+              // Only restore originals that pass a basic sanity check (non-empty, not obviously fake)
+              console.warn('[Knowledge URL] Validation timed out after 12s');
+              if (!research.homepage_url || research.homepage_url.trim() === '') {
+                research.homepage_url = originalHomepageUrl;
+                console.log(`[Knowledge URL] Restored homepage_url: ${originalHomepageUrl || '(empty)'}`);
+              }
+              if (!research.business_url || research.business_url.trim() === '') {
+                research.business_url = originalBusinessUrl;
+                console.log(`[Knowledge URL] Restored business_url: ${originalBusinessUrl || '(empty)'}`);
+              }
             }
             resolve();
           }, 12000)
@@ -2032,9 +2081,11 @@ export class ResearchService {
       ]);
     } catch (error) {
       console.warn('[Knowledge URL] Validation failed:', error);
-      // On error: restore Gemini's original URLs instead of clearing
-      research.homepage_url = research.homepage_url || originalHomepageUrl;
-      research.business_url = research.business_url || originalBusinessUrl;
+      // On error: only restore if validation didn't complete
+      if (!validationComplete) {
+        research.homepage_url = research.homepage_url || originalHomepageUrl;
+        research.business_url = research.business_url || originalBusinessUrl;
+      }
     }
   }
 
