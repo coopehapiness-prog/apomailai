@@ -418,6 +418,7 @@ async function enrichNewsTitles(
 async function scrapeCompanyNewsUrls(
   companyName: string,
   homepageUrl?: string,
+  alternateNames?: string[],
 ): Promise<SearchResultWithUrl[]> {
   const results: SearchResultWithUrl[] = [];
   const fetchPage = async (url: string): Promise<string> => {
@@ -505,25 +506,48 @@ async function scrapeCompanyNewsUrls(
     }
   }
 
-  // 2. Try PR TIMES search for the company (use full company name for accuracy)
-  try {
-    const prtimesSearchName = companyName; // Always use full name to avoid noise
-    const prtimesUrl = `https://prtimes.jp/main/action.php?run=html&page=searchkey&search_word=${encodeURIComponent(prtimesSearchName)}`;
-    const html = await fetchPage(prtimesUrl);
-    if (html.length > 1000) {
-      const links = extractArticleLinks(html, 'https://prtimes.jp');
-      // Filter to only prtimes.jp article links AND relevant to the company
-      const prtimesLinks = links.filter((l) =>
-        l.url.includes('prtimes.jp/main/html/rd/') &&
-        isRelevantToCompany(l, companyName)
-      );
-      if (prtimesLinks.length > 0) {
-        console.log(`[News Scrape] Found ${prtimesLinks.length} PR TIMES articles for ${companyName}`);
-        results.push(...prtimesLinks);
+  // 2. Try PR TIMES search for the company
+  // Search with primary name + alternate names (e.g., old name → current name)
+  const searchNames = [companyName];
+  if (alternateNames) {
+    for (const alt of alternateNames) {
+      if (alt && alt.trim() && !searchNames.includes(alt.trim())) {
+        searchNames.push(alt.trim());
       }
     }
-  } catch (e) {
-    console.warn('[News Scrape] PR TIMES scrape failed:', e);
+  }
+  // Also try core name without prefix/suffix (e.g., "Mobility Technologies" from "株式会社Mobility Technologies")
+  const coreName = companyName
+    .replace(/^(株式会社|合同会社|有限会社|一般社団法人|一般財団法人)\s*/, '')
+    .replace(/\s*(株式会社|合同会社|有限会社|Inc\.|Co\.,?\s*Ltd\.?)$/i, '')
+    .trim();
+  if (coreName && coreName !== companyName && !searchNames.includes(coreName)) {
+    searchNames.push(coreName);
+  }
+
+  const seenPrTimesUrls = new Set<string>();
+  for (const searchName of searchNames) {
+    try {
+      const prtimesUrl = `https://prtimes.jp/main/action.php?run=html&page=searchkey&search_word=${encodeURIComponent(searchName)}`;
+      const html = await fetchPage(prtimesUrl);
+      if (html.length > 1000) {
+        const links = extractArticleLinks(html, 'https://prtimes.jp');
+        // Filter to prtimes.jp article links; check relevance against ANY known name
+        const prtimesLinks = links.filter((l) => {
+          if (!l.url.includes('prtimes.jp/main/html/rd/')) return false;
+          if (seenPrTimesUrls.has(l.url)) return false;
+          // Check relevance against any of the company names
+          return searchNames.some((name) => isRelevantToCompany(l, name));
+        });
+        if (prtimesLinks.length > 0) {
+          console.log(`[News Scrape] Found ${prtimesLinks.length} PR TIMES articles for "${searchName}"`);
+          prtimesLinks.forEach((l) => seenPrTimesUrls.add(l.url));
+          results.push(...prtimesLinks);
+        }
+      }
+    } catch (e) {
+      console.warn(`[News Scrape] PR TIMES scrape failed for "${searchName}":`, e);
+    }
   }
 
   return results;
@@ -727,6 +751,7 @@ export class ResearchService {
 
 ■ 重要：情報が不確かな場合でも、業界の一般的な傾向から合理的に推測し、具体的で有用な情報を出力してください。
 ■ 「pains」は必ず5つ以上出力してください。${companyName}の業界・規模・ビジネスモデルに応じた具体的な経営課題を記載してください。
+■ 「company_name」は${companyName}の正式名称（現在の社名）を記載してください。社名変更があった場合は最新の正式名称を返してください。
 ■ 「overview」と「business」は必ず2-3文以上で具体的に記載してください。「情報なし」や「不明」は絶対に出力しないでください。
 ■ 「homepage_url」は${companyName}の会社概要ページの直接URLを記載してください（例：https://example.co.jp/about や https://example.co.jp/company、またはサブドメイン型の https://about.example.com/ ）。ルートURL（https://example.co.jp/）ではなく、会社概要・企業情報ページの直接リンクを優先してください。URLにハッシュフラグメント（#company等）が必要な場合はそれも含めてください。確信がない場合は空文字""にしてください。
 ■ 「business_url」は${companyName}のサービス・製品紹介ページの直接URLを記載してください（例：https://example.co.jp/service や https://example.co.jp/products）。不明な場合は空文字""にしてください。
@@ -771,7 +796,12 @@ export class ResearchService {
             // Source 2: Scrape company news pages & PR TIMES
             try {
               const homepageUrl = research.homepage_url || '';
-              const scrapedResults = await scrapeCompanyNewsUrls(companyName, homepageUrl || undefined);
+              // Pass alternate names for companies that may have changed names
+              const altNames: string[] = [];
+              if (research.company_name && research.company_name !== companyName) {
+                altNames.push(research.company_name);
+              }
+              const scrapedResults = await scrapeCompanyNewsUrls(companyName, homepageUrl || undefined, altNames.length > 0 ? altNames : undefined);
               if (scrapedResults.length > 0) {
                 console.log(`[News] Scraped ${scrapedResults.length} real article URLs`);
                 realArticles.push(...scrapedResults);
@@ -1064,7 +1094,11 @@ export class ResearchService {
         if (missingAfterVerify > 0) {
           try {
             const homepageUrl = research.homepage_url || '';
-            const scrapedResults = await scrapeCompanyNewsUrls(companyName, homepageUrl || undefined);
+            const altNames: string[] = [];
+            if (research.company_name && research.company_name !== companyName) {
+              altNames.push(research.company_name);
+            }
+            const scrapedResults = await scrapeCompanyNewsUrls(companyName, homepageUrl || undefined, altNames.length > 0 ? altNames : undefined);
             if (scrapedResults.length > 0) {
               console.log(`[News URL] Supplemented with ${scrapedResults.length} scraped article URLs`);
               allCandidates = [...allCandidates, ...scrapedResults];
