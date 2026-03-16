@@ -279,6 +279,7 @@ function getSmartEmailPatterns(
   const serviceName = (settings as any).service_name || settings.serviceInfo?.name || '';
   const serviceBenefit = (settings as any).service_benefit || settings.serviceInfo?.strengths?.join('、') || '';
   const schedulingUrl = (settings as any).scheduling_url || '';
+  const serviceDocumentUrl = (settings as any).service_document_url || '';
 
   const industry = (research as any).industry || '';
   const painPoints = research.pains?.slice(0, 3) || [];
@@ -319,7 +320,7 @@ function getSmartEmailPatterns(
     {
       patternName: '初回メール（流入直後）',
       subject: `資料ご請求のお礼と${pain1.substring(0, 8)}のご案内`,
-      body: `${companyName}\nご担当者様\n\nお世話になっております。${senderCompany}の${senderName}です。\n\nこの度は弊社の資料をご請求いただき、誠にありがとうございます。${researchContext}\n\n${industryLabel}企業様とお話しする中で、「${pain1}」が重要な経営テーマになっているケースが多いと感じております。もし貴社でも同様の課題をお持ちでしたら、${serviceIntro}で${serviceBenefit ? serviceBenefit.substring(0, 40) + 'といった改善' : '具体的な改善'}を実現できる可能性がございます。\n\n実際に${industryLabel}A社様では、${serviceIntro}を導入された結果、同様の課題が3ヶ月で改善された事例がございます。\n\n貴社の状況に合わせた具体的な活用イメージもご説明可能ですので、ぜひ一度お話しさせていただければ幸いです。\n\n${ctaBlock}\n\nよろしくお願いいたします。`,
+      body: `${companyName}\nご担当者様\n\nお世話になっております。${senderCompany}の${senderName}です。\n\nこの度は弊社の資料をご請求いただき、誠にありがとうございます。${serviceDocumentUrl ? `\n\nご請求いただいた資料は下記よりご覧いただけます。\n${serviceDocumentUrl}` : '\n\n改めて資料をお送りさせていただきます。'}${researchContext ? `\n\n${researchContext}` : ''}\n\n${industryLabel}企業様とお話しする中で、「${pain1}」が重要な経営テーマになっているケースが多いと感じております。もし貴社でも同様の課題をお持ちでしたら、${serviceIntro}で${serviceBenefit ? serviceBenefit.substring(0, 40) + 'といった改善' : '具体的な改善'}を実現できる可能性がございます。\n\n貴社の状況に合わせた具体的な活用イメージもご説明可能ですので、ぜひ一度お話しさせていただければ幸いです。\n\n${ctaBlock}\n\nよろしくお願いいたします。`,
       targetPersona: 'executive',
       description: '初回メール（流入直後）',
     },
@@ -1081,6 +1082,42 @@ ${companyName}の中の人（経営者・従業員）が日々の事業運営で
         return getSmartEmailPatterns(companyName, research, settings);
       }
       return this.getLegacyFallbackPatterns();
+    }
+
+    // Post-process: Ensure Pattern A (初回メール) includes service document URL if set
+    if (settings) {
+      const serviceDocumentUrl = (settings as any).service_document_url || '';
+      if (serviceDocumentUrl && patterns.length > 0) {
+        const patternA = patterns[0];
+        if (!patternA.body.includes(serviceDocumentUrl)) {
+          console.log('[Email] Pattern A missing service document URL, injecting...');
+          // Insert the document URL after the greeting/thank-you paragraph
+          const lines = patternA.body.split('\n');
+          // Find the first paragraph break after the greeting (after "ございます。" or similar)
+          let insertIdx = -1;
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.includes('ありがとうございます') || line.includes('ご請求') || line.includes('ダウンロード')) {
+              insertIdx = i + 1;
+              break;
+            }
+          }
+          if (insertIdx === -1) {
+            // Fallback: insert after first empty line (end of greeting block)
+            for (let i = 3; i < lines.length; i++) {
+              if (lines[i].trim() === '') {
+                insertIdx = i + 1;
+                break;
+              }
+            }
+          }
+          if (insertIdx > 0 && insertIdx < lines.length) {
+            const docBlock = `\nご請求いただいた資料は下記よりご覧いただけます。\n${serviceDocumentUrl}\n`;
+            lines.splice(insertIdx, 0, docBlock);
+            patternA.body = lines.join('\n');
+          }
+        }
+      }
     }
 
     return patterns.length >= 4 ? patterns.slice(0, 4) : patterns;

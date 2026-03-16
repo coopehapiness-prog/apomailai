@@ -739,9 +739,54 @@ export class ResearchService {
 
               research.news = newNews;
             } else {
-              // No real articles found — clear all fabricated URLs
-              console.log('[News] No real articles found, clearing fabricated URLs');
-              research.news = research.news.map((item) => ({ ...item, url: '' }));
+              // No real articles found — validate Gemini URLs individually instead of blanket-clearing
+              console.log('[News] No real articles found, validating Gemini URLs individually...');
+              const validatedNews = await Promise.all(
+                research.news.map(async (item) => {
+                  if (!item.url || item.url.trim() === '') return item;
+                  // Skip listing pages
+                  if (isListingPage(item.url)) {
+                    console.log(`[News] Clearing listing page URL: ${item.url}`);
+                    return { ...item, url: '' };
+                  }
+                  // Quick-check if the URL is reachable
+                  try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    const response = await fetch(item.url, {
+                      redirect: 'follow',
+                      signal: controller.signal,
+                      headers: { 'User-Agent': NEWS_UA },
+                      cache: 'no-store' as RequestCache,
+                    });
+                    clearTimeout(timeoutId);
+                    if (response.ok) {
+                      // Check for redirect to listing/root page
+                      const finalUrl = response.url || item.url;
+                      if (isListingPage(finalUrl)) {
+                        console.log(`[News] URL redirected to listing page: ${item.url} → ${finalUrl}`);
+                        return { ...item, url: '' };
+                      }
+                      // Check for soft 404
+                      const text = await response.text().catch(() => '');
+                      const first2000 = text.substring(0, 2000).toLowerCase();
+                      const isSoft404 = SOFT_404_KEYWORDS.some((kw) => first2000.includes(kw));
+                      if (isSoft404) {
+                        console.log(`[News] Soft 404 detected: ${item.url}`);
+                        return { ...item, url: '' };
+                      }
+                      console.log(`[News] Gemini URL valid: ${item.url}`);
+                      return item;
+                    }
+                    console.log(`[News] Gemini URL invalid (${response.status}): ${item.url}`);
+                    return { ...item, url: '' };
+                  } catch {
+                    console.log(`[News] Gemini URL unreachable: ${item.url}`);
+                    return { ...item, url: '' };
+                  }
+                })
+              );
+              research.news = validatedNews;
             }
 
             const finalCount = research.news.filter((n) => n.url && n.url.trim() !== '').length;
