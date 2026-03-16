@@ -621,7 +621,15 @@ export class ResearchService {
 ■ 「overview」と「business」は必ず2-3文以上で具体的に記載してください。「情報なし」や「不明」は絶対に出力しないでください。
 ■ 「homepage_url」は${companyName}の会社概要ページの直接URLを記載してください（例：https://example.co.jp/about や https://example.co.jp/company、またはサブドメイン型の https://about.example.com/ ）。ルートURL（https://example.co.jp/）ではなく、会社概要・企業情報ページの直接リンクを優先してください。URLにハッシュフラグメント（#company等）が必要な場合はそれも含めてください。確信がない場合は空文字""にしてください。
 ■ 「business_url」は${companyName}のサービス・製品紹介ページの直接URLを記載してください（例：https://example.co.jp/service や https://example.co.jp/products）。不明な場合は空文字""にしてください。
-■ 【ニュースについて最重要ルール】本日は${new Date().toISOString().slice(0, 10)}です。未来の日付のニュースは絶対に作成しないでください。確実に知っている過去の事実のみを記載してください。ニュースURLは個別の記事ページのURL（例：https://example.co.jp/news/2025/article-title）を記載し、ニュース一覧ページ（例：https://example.co.jp/news/）は使わないでください。URLに確信がない場合は空文字""にしてください。捏造は厳禁です。`;
+■ 【ニュースについて最重要ルール】
+- 本日は${new Date().toISOString().slice(0, 10)}です。未来の日付のニュースは絶対に作成しないでください。
+- ★★★ newsは【必ず7件】出力してください。これは絶対条件です。7件ちょうど出力すること。★★★
+- 確実に知っている過去の事実・ニュースを記載してください。直近6ヶ月以内のニュースを優先。
+- 7件見つからない場合でも、${companyName}に関する事業動向、業界ニュース、IR情報、採用情報、提携発表など幅広く探して必ず7件出力すること。
+- それでも足りない場合は、${companyName}が属する業界の最新トレンドやニュースで補完して7件にすること。
+- ニュースURLは個別の記事ページのURL（例：https://example.co.jp/news/2025/article-title）を記載し、ニュース一覧ページ（例：https://example.co.jp/news/）は使わないでください。
+- URLに確信がない場合は空文字""にしてください。捏造は厳禁です。
+- 7件のうち最後の1件（7件目）はIR情報・決算発表・業績報告・資金調達に関するニュースにしてください。`;
           const research = await geminiService.analyzeResearch(
             companyName,
             knowledgePrompt,
@@ -1599,7 +1607,11 @@ export class ResearchService {
       '/jp/ja/about/business-group/', '/jp/ja/business/', '/jp/ja/service/', '/jp/ja/services/', '/jp/ja/product/', '/jp/ja/products/',
       '/ja/business/', '/ja/service/', '/ja/services/', '/ja/product/', '/ja/products/',
       '/business/', '/service/', '/services/', '/product/', '/products/', '/solution/', '/solutions/',
+      '/platform/', '/platform', '/features/', '/features', '/what-we-do/', '/what-we-do',
       '/service-info', '/service-info/', '/product-info', '/product-info/',
+      '/about/service/', '/about/business/', '/about/product/',
+      '/company/service/', '/company/business/',
+      '/lp/', '/overview/', '/offering/', '/offerings/',
       '/jp/business/', '/jp/products/', '/jp/services/',
       '/en/business/', '/en/products/', '/en/services/',
     ];
@@ -1832,6 +1844,10 @@ export class ResearchService {
                 '/product', '/product/', '/products', '/products/',
                 '/solution', '/solution/', '/solutions', '/solutions/',
                 '/business', '/business/', '/service-info', '/service-info/',
+                '/platform', '/platform/', '/features', '/features/',
+                '/what-we-do', '/what-we-do/', '/offering', '/offerings/',
+                '/about/service/', '/about/business/', '/about/product/',
+                '/company/service/', '/company/business/',
                 '/ja/service/', '/ja/business/', '/ja/products/',
               ];
               let foundBusiness = false;
@@ -1876,6 +1892,10 @@ export class ResearchService {
                 '/product', '/product/', '/products', '/products/',
                 '/solution', '/solution/', '/solutions', '/solutions/',
                 '/business', '/business/', '/service-info', '/service-info/',
+                '/platform', '/platform/', '/features', '/features/',
+                '/what-we-do', '/what-we-do/', '/offering', '/offerings/',
+                '/about/service/', '/about/business/', '/about/product/',
+                '/company/service/', '/company/business/',
                 '/ja/service/', '/ja/business/', '/ja/products/',
               ];
               for (let i = 0; i < servicePaths.length; i += 5) {
