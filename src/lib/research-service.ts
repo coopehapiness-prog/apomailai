@@ -488,7 +488,7 @@ async function scrapeCompanyNewsUrls(
     try {
       const baseHost = new URL(homepageUrl).origin;
       // Common news page paths
-      const newsPaths = ['/news', '/news/', '/press', '/press/', '/topics', '/topics/', '/information', '/information/', '/media', '/media/'];
+      const newsPaths = ['/news', '/news/', '/press', '/press/', '/topics', '/topics/', '/information', '/information/', '/media', '/media/', '/blog', '/blog/', '/journal', '/journal/', '/updates', '/updates/', '/article', '/article/', '/info', '/info/', '/pressroom', '/pressroom/', '/newsroom', '/newsroom/', '/release', '/release/'];
       for (const np of newsPaths) {
         const newsPageUrl = baseHost + np;
         const html = await fetchPage(newsPageUrl);
@@ -550,6 +550,135 @@ async function scrapeCompanyNewsUrls(
     }
   }
 
+  return results;
+}
+
+/**
+ * Decode a Google News RSS article URL (base64-encoded protobuf) to get the real article URL.
+ */
+function decodeGoogleNewsUrl(encodedUrl: string): string | null {
+  try {
+    const base64Part = encodedUrl
+      .replace(/^https?:\/\/news\.google\.com\/rss\/articles\//, '')
+      .replace(/\?.*$/, '');
+    if (!base64Part) return null;
+    const decoded = Buffer.from(base64Part, 'base64url').toString('utf-8');
+    // Extract the first http(s) URL from the decoded bytes
+    const urlMatch = decoded.match(/https?:\/\/[^\s\x00-\x1f"'<>]+/);
+    return urlMatch ? urlMatch[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scrape Google News RSS feed to find recent news articles about a company.
+ * This is a reliable fallback when Google Search API is not configured.
+ */
+async function scrapeGoogleNews(companyName: string): Promise<SearchResultWithUrl[]> {
+  const results: SearchResultWithUrl[] = [];
+  const seen = new Set<string>();
+
+  // Build search queries: full company name + core name
+  const coreName = companyName
+    .replace(/^(株式会社|合同会社|有限会社|一般社団法人|一般財団法人)\s*/, '')
+    .replace(/\s*(株式会社|合同会社|有限会社|Inc\.|Co\.,?\s*Ltd\.?)$/i, '')
+    .trim();
+
+  const queries = [companyName];
+  if (coreName && coreName !== companyName) {
+    queries.push(coreName);
+  }
+
+  for (const query of queries) {
+    try {
+      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=ja&gl=JP&ceid=JP:ja`;
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(rssUrl, {
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: { 'User-Agent': NEWS_UA },
+        cache: 'no-store' as RequestCache,
+      });
+      clearTimeout(tid);
+      if (!res.ok) continue;
+      const xml = await res.text();
+
+      // Parse RSS items using regex (simple XML parsing)
+      const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+      let itemMatch;
+      while ((itemMatch = itemRegex.exec(xml)) !== null) {
+        const itemXml = itemMatch[1];
+
+        // Extract title
+        const titleMatch = itemXml.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>|<title>([\s\S]*?)<\/title>/);
+        const rawTitle = (titleMatch?.[1] || titleMatch?.[2] || '').trim();
+        // Remove " - SourceName" suffix
+        const title = rawTitle.replace(/\s*[-–—]\s*[^-–—]+$/, '').trim();
+
+        // Extract link (Google News encoded URL)
+        const linkMatch = itemXml.match(/<link>([\s\S]*?)<\/link>|<link[^>]*href=["']([^"']+)["']/);
+        const encodedLink = (linkMatch?.[1] || linkMatch?.[2] || '').trim();
+
+        // Extract publication date
+        const pubDateMatch = itemXml.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+        const pubDateStr = (pubDateMatch?.[1] || '').trim();
+
+        if (!title || !encodedLink) continue;
+
+        // Try to decode the real article URL
+        let realUrl = decodeGoogleNewsUrl(encodedLink);
+        if (!realUrl) {
+          // Try following redirect as fallback
+          try {
+            const redirectCtrl = new AbortController();
+            const redirectTid = setTimeout(() => redirectCtrl.abort(), 3000);
+            const redirectRes = await fetch(encodedLink, {
+              redirect: 'manual',
+              signal: redirectCtrl.signal,
+              headers: { 'User-Agent': NEWS_UA },
+            });
+            clearTimeout(redirectTid);
+            const location = redirectRes.headers.get('location');
+            if (location && location.startsWith('http')) {
+              realUrl = location;
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (!realUrl || seen.has(realUrl)) continue;
+        if (isListingPage(realUrl)) continue;
+
+        seen.add(realUrl);
+
+        // Parse date
+        let dateStr = '';
+        if (pubDateStr) {
+          try {
+            const d = new Date(pubDateStr);
+            if (!isNaN(d.getTime())) {
+              dateStr = d.toISOString().slice(0, 10);
+            }
+          } catch { /* ignore */ }
+        }
+
+        results.push({
+          title: title,
+          url: realUrl,
+          snippet: `${title} (${dateStr})`,
+        });
+
+        // Limit to 15 results
+        if (results.length >= 15) break;
+      }
+      if (results.length >= 10) break; // Enough results from first query
+    } catch (err) {
+      console.warn(`[Google News RSS] Failed for "${query}":`, err);
+    }
+  }
+
+  console.log(`[Google News RSS] Found ${results.length} articles for "${companyName}"`);
   return results;
 }
 
@@ -808,6 +937,23 @@ export class ResearchService {
               }
             } catch (err) {
               console.warn('[News] News scrape failed:', err);
+            }
+
+            // Source 3: Google News RSS feed (reliable fallback, no API key needed)
+            try {
+              const googleNewsResults = await scrapeGoogleNews(companyName);
+              if (googleNewsResults.length > 0) {
+                // Filter to relevant results
+                const relevantGoogleNews = googleNewsResults.filter(
+                  (r) => isRelevantToCompany(r, companyName)
+                    || (research.company_name && isRelevantToCompany(r, research.company_name))
+                );
+                const toAdd = relevantGoogleNews.length > 0 ? relevantGoogleNews : googleNewsResults;
+                console.log(`[News] Google News RSS: ${toAdd.length} articles (${relevantGoogleNews.length} relevant)`);
+                realArticles.push(...toAdd);
+              }
+            } catch (err) {
+              console.warn('[News] Google News RSS failed:', err);
             }
 
             // Deduplicate by URL, prefer company-relevant results
@@ -1105,6 +1251,22 @@ export class ResearchService {
             }
           } catch (err) {
             console.warn('[News URL] Scrape supplement failed:', err);
+          }
+
+          // Also try Google News RSS
+          try {
+            const googleNewsResults = await scrapeGoogleNews(companyName);
+            if (googleNewsResults.length > 0) {
+              const relevantGNews = googleNewsResults.filter(
+                (r) => isRelevantToCompany(r, companyName)
+                  || (research.company_name && isRelevantToCompany(r, research.company_name))
+              );
+              const toAdd = relevantGNews.length > 0 ? relevantGNews : googleNewsResults;
+              console.log(`[News URL] Google News RSS: ${toAdd.length} articles`);
+              allCandidates = [...allCandidates, ...toAdd];
+            }
+          } catch (err) {
+            console.warn('[News URL] Google News RSS supplement failed:', err);
           }
         }
 
