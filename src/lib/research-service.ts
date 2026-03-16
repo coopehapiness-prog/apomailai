@@ -35,6 +35,68 @@ const SOFT_404_KEYWORDS = [
 ];
 const NEWS_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+// ── Domain reachability cache ──
+// Prevents repeated DNS lookups/HTTP requests to the same unreachable domain.
+// Key = hostname, Value = true (reachable) | false (unreachable).
+// Cache is per-request (module-level Map, reset on cold start).
+const domainReachabilityCache = new Map<string, boolean>();
+
+/** Quick-check if a domain is reachable (with caching). Returns false for DNS failures. */
+async function isDomainReachable(hostname: string): Promise<boolean> {
+  if (domainReachabilityCache.has(hostname)) {
+    return domainReachabilityCache.get(hostname)!;
+  }
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const response = await fetch(`https://${hostname}`, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': NEWS_UA },
+      cache: 'no-store' as RequestCache,
+    });
+    clearTimeout(timeoutId);
+    const reachable = response.ok || response.status < 500;
+    domainReachabilityCache.set(hostname, reachable);
+    return reachable;
+  } catch {
+    domainReachabilityCache.set(hostname, false);
+    return false;
+  }
+}
+
+/** Quick-check if a URL is reachable. Skips check if domain is known-unreachable. */
+async function quickCheckUrl(url: string): Promise<boolean> {
+  if (!url || url.trim() === '') return false;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname || parsed.hostname.length < 3) return false;
+    // Check domain cache first — skip HTTP request if domain is known dead
+    if (domainReachabilityCache.has(parsed.hostname)) {
+      if (!domainReachabilityCache.get(parsed.hostname)) return false;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const response = await fetch(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': NEWS_UA },
+      cache: 'no-store' as RequestCache,
+    });
+    clearTimeout(timeoutId);
+    // Cache the domain result
+    domainReachabilityCache.set(parsed.hostname, true);
+    return response.ok;
+  } catch {
+    // On DNS failure or timeout, mark domain as unreachable
+    try {
+      const parsed = new URL(url);
+      domainReachabilityCache.set(parsed.hostname, false);
+    } catch {}
+    return false;
+  }
+}
+
 /** Check if a URL is a listing/index page (e.g. /news/, /press/) rather than a specific article */
 function isListingPage(url: string): boolean {
   try {
@@ -786,56 +848,47 @@ export class ResearchService {
 
               research.news = newNews;
             } else {
-              // No real articles found — validate Gemini URLs individually instead of blanket-clearing
-              console.log('[News] No real articles found, validating Gemini URLs individually...');
+              // No real articles found — validate Gemini URLs using domain cache
+              console.log('[News] No real articles found, validating Gemini URLs with domain cache...');
+
+              // First, check which domains are reachable (deduplicated)
+              const newsDomainsToCheck = new Set<string>();
+              for (const item of research.news) {
+                if (item.url && item.url.trim() !== '') {
+                  try { newsDomainsToCheck.add(new URL(item.url).hostname); } catch {}
+                }
+              }
+              // Pre-check all unique domains in parallel (fast — only unique domains)
+              await Promise.all(
+                Array.from(newsDomainsToCheck).map((d) => isDomainReachable(d))
+              );
+
+              // Now validate individual URLs (domain cache prevents redundant fetches)
               const validatedNews = await Promise.all(
                 research.news.map(async (item) => {
                   if (!item.url || item.url.trim() === '') return item;
-                  // Skip listing pages
                   if (isListingPage(item.url)) {
                     console.log(`[News] Clearing listing page URL: ${item.url}`);
                     return { ...item, url: '' };
                   }
-                  // Quick-check if the URL is reachable
+                  // Skip if domain is known-unreachable
                   try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 3000);
-                    const response = await fetch(item.url, {
-                      redirect: 'follow',
-                      signal: controller.signal,
-                      headers: { 'User-Agent': NEWS_UA },
-                      cache: 'no-store' as RequestCache,
-                    });
-                    clearTimeout(timeoutId);
-                    if (response.ok) {
-                      // Check for redirect to listing/root page
-                      const finalUrl = response.url || item.url;
-                      if (isListingPage(finalUrl)) {
-                        console.log(`[News] URL redirected to listing page: ${item.url} → ${finalUrl}`);
-                        return { ...item, url: '' };
-                      }
-                      // Check for soft 404
-                      const text = await response.text().catch(() => '');
-                      const first2000 = text.substring(0, 2000).toLowerCase();
-                      const isSoft404 = SOFT_404_KEYWORDS.some((kw) => first2000.includes(kw));
-                      if (isSoft404) {
-                        console.log(`[News] Soft 404 detected: ${item.url}`);
-                        return { ...item, url: '' };
-                      }
-                      // Extract real date from the fetched page
-                      const extractedDate = extractDateFromHtml(text);
-                      if (extractedDate && extractedDate !== item.date) {
-                        console.log(`[News] Date corrected: "${item.date}" → "${extractedDate}" for ${item.url}`);
-                      }
-                      console.log(`[News] Gemini URL valid: ${item.url}`);
-                      return { ...item, date: extractedDate || item.date };
+                    const hostname = new URL(item.url).hostname;
+                    if (domainReachabilityCache.get(hostname) === false) {
+                      console.log(`[News] Domain unreachable (cached): ${hostname}`);
+                      return { ...item, url: '' };
                     }
-                    console.log(`[News] Gemini URL invalid (${response.status}): ${item.url}`);
-                    return { ...item, url: '' };
                   } catch {
-                    console.log(`[News] Gemini URL unreachable: ${item.url}`);
                     return { ...item, url: '' };
                   }
+                  // Domain is reachable — check the specific URL
+                  const ok = await quickCheckUrl(item.url);
+                  if (!ok) {
+                    console.log(`[News] Gemini URL invalid: ${item.url}`);
+                    return { ...item, url: '' };
+                  }
+                  console.log(`[News] Gemini URL valid: ${item.url}`);
+                  return item;
                 })
               );
               research.news = validatedNews;
@@ -1630,17 +1683,28 @@ export class ResearchService {
     businessUrl?: string;
   }> {
     const result: { aboutUrl?: string; businessUrl?: string } = {};
-    const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+    // Check domain first — skip all probing if domain is unreachable
+    const rootDomainForCheck = domain.replace(/^www\./, '');
+    const domainOk = await isDomainReachable(rootDomainForCheck);
+    if (!domainOk) {
+      console.log(`[Probe] Domain ${domain} is unreachable, skipping probing`);
+      return result;
+    }
 
     const tryUrl = async (url: string): Promise<string | null> => {
       try {
+        // Skip if domain is known-unreachable
+        const hostname = new URL(url).hostname;
+        if (domainReachabilityCache.get(hostname) === false) return null;
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         const response = await fetch(url, {
           redirect: 'follow',
           signal: controller.signal,
-          headers: { 'User-Agent': UA },
-          cache: 'no-store' as RequestCache, // Prevent Next.js fetch caching
+          headers: { 'User-Agent': NEWS_UA },
+          cache: 'no-store' as RequestCache,
         });
         clearTimeout(timeoutId);
         if (!response.ok) return null;
@@ -1792,27 +1856,8 @@ export class ResearchService {
     research: CompanyResearch,
     companyName: string
   ): Promise<void> {
-    const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-    const quickCheck = async (url: string): Promise<boolean> => {
-      if (!url || url.trim() === '') return false;
-      try {
-        const parsed = new URL(url);
-        if (!parsed.hostname || parsed.hostname.length < 3) return false;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(url, {
-          redirect: 'follow',
-          signal: controller.signal,
-          headers: { 'User-Agent': UA },
-          cache: 'no-store' as RequestCache,
-        });
-        clearTimeout(timeoutId);
-        return response.ok;
-      } catch {
-        return false;
-      }
-    };
+    // Use the global quickCheckUrl with domain caching
+    const quickCheck = quickCheckUrl;
 
     // Check if URL is a root/top page (not a specific company info page)
     const isRootUrl = (url: string): boolean => {
@@ -1905,7 +1950,7 @@ export class ResearchService {
             // Try to probe the domain for a valid company page
             let domainReachable = false;
             if (probeDomain) {
-              domainReachable = await quickCheck(`https://${probeDomain}`);
+              domainReachable = await isDomainReachable(probeDomain);
             }
 
             if (probeDomain && domainReachable) {
