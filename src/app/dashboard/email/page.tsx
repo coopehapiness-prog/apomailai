@@ -204,10 +204,9 @@ export default function EmailPage() {
   if (!patterns || patterns.length === 0) {
     return (
       <div className="space-y-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">メール生成</h1>
-          <p className="text-slate-400">
-            企業情報を入力すると、AIが営業メールを自動生成します
+        <div className="mb-6">
+          <p className="text-base text-slate-300">
+            企業名を入力すると、AIがリサーチして営業メールを自動生成します
           </p>
         </div>
 
