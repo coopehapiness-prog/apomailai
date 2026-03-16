@@ -228,7 +228,29 @@ function isGenericTitle(title: string): boolean {
 }
 
 /** Fetch the actual page title from a URL */
-async function fetchPageTitle(url: string): Promise<string | null> {
+/** Extract date from HTML content using meta tags, JSON-LD, or visible Japanese dates */
+function extractDateFromHtml(html: string): string {
+  const chunk = html.substring(0, 8000);
+  // 1. Meta tags: article:published_time, datePublished, etc.
+  const metaMatch = chunk.match(
+    /(?:article:published_time|datePublished|date|DC\.date|pubdate|publishdate|publish_date)['"]\s*(?:content|value|datetime)\s*=\s*['"](\d{4}-\d{2}-\d{2})/i
+  ) || chunk.match(
+    /(?:content|value|datetime)\s*=\s*['"](\d{4}-\d{2}-\d{2})(?:T|\s)/
+  );
+  if (metaMatch) return metaMatch[1];
+  // 2. JSON-LD datePublished
+  const jsonLdMatch = chunk.match(/"datePublished"\s*:\s*"(\d{4}-\d{2}-\d{2})/);
+  if (jsonLdMatch) return jsonLdMatch[1];
+  // 3. time element datetime attribute
+  const timeMatch = chunk.match(/<time[^>]+datetime\s*=\s*['"](\d{4}-\d{2}-\d{2})/i);
+  if (timeMatch) return timeMatch[1];
+  // 4. Japanese date (2026年3月15日)
+  const jpMatch = chunk.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (jpMatch) return `${jpMatch[1]}-${jpMatch[2].padStart(2, '0')}-${jpMatch[3].padStart(2, '0')}`;
+  return '';
+}
+
+async function fetchPageTitleAndDate(url: string): Promise<{ title: string | null; date: string }> {
   try {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 3000);
@@ -239,27 +261,40 @@ async function fetchPageTitle(url: string): Promise<string | null> {
       cache: 'no-store' as RequestCache,
     });
     clearTimeout(tid);
-    if (!res.ok) return null;
+    if (!res.ok) return { title: null, date: '' };
     const text = await res.text();
     const chunk = text.substring(0, 15000);
+
+    // Extract title
+    let title: string | null = null;
     const titleMatch = chunk.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    if (!titleMatch) return null;
-    let title = titleMatch[1].trim()
-      .replace(/\s+/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&#\d+;/g, '');
-    // Remove site name suffix (e.g., "記事タイトル | PR TIMES", "記事タイトル - 会社名")
-    title = title.replace(/\s*[|\-–—]\s*(PR\s*TIMES|PRTIMES|プレスリリース|ニュース|お知らせ|News|Press).*/i, '').trim();
-    // Also try to remove company name suffix
-    title = title.replace(/\s*[|\-–—]\s*[^|\-–—]+$/, '').trim();
-    if (title.length < 5) return null;
-    if (SOFT_404_KEYWORDS.some((kw) => title.toLowerCase().includes(kw))) return null;
-    return title;
+    if (titleMatch) {
+      let t = titleMatch[1].trim()
+        .replace(/\s+/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&#\d+;/g, '');
+      t = t.replace(/\s*[|\-–—]\s*(PR\s*TIMES|PRTIMES|プレスリリース|ニュース|お知らせ|News|Press).*/i, '').trim();
+      t = t.replace(/\s*[|\-–—]\s*[^|\-–—]+$/, '').trim();
+      if (t.length >= 5 && !SOFT_404_KEYWORDS.some((kw) => t.toLowerCase().includes(kw))) {
+        title = t;
+      }
+    }
+
+    // Extract date
+    const date = extractDateFromHtml(text);
+
+    return { title, date };
   } catch {
-    return null;
+    return { title: null, date: '' };
   }
+}
+
+// Keep backward compat wrapper
+async function fetchPageTitle(url: string): Promise<string | null> {
+  const result = await fetchPageTitleAndDate(url);
+  return result.title;
 }
 
 /**
@@ -281,24 +316,36 @@ async function enrichNewsTitles(
   }
 
   return Promise.all(news.map(async (item) => {
-    if (!isGenericTitle(item.title)) return item;
     if (!item.url || item.url.trim() === '') return item;
 
-    // 1. Try search result title
-    const searchTitle = urlTitleMap.get(item.url);
-    if (searchTitle && !isGenericTitle(searchTitle)) {
-      console.log(`[News Title] Enriched from search: "${item.title}" → "${searchTitle}"`);
-      return { ...item, title: searchTitle };
+    const needsTitleEnrich = isGenericTitle(item.title);
+
+    // 1. Try search result title (for title enrichment)
+    if (needsTitleEnrich) {
+      const searchTitle = urlTitleMap.get(item.url);
+      if (searchTitle && !isGenericTitle(searchTitle)) {
+        console.log(`[News Title] Enriched from search: "${item.title}" → "${searchTitle}"`);
+        // Still fetch page for date correction
+        const { date } = await fetchPageTitleAndDate(item.url);
+        if (date && date !== item.date) {
+          console.log(`[News Date] Corrected: "${item.date}" → "${date}" for "${searchTitle}"`);
+        }
+        return { ...item, title: searchTitle, date: date || item.date };
+      }
     }
 
-    // 2. Fetch actual page title
-    const pageTitle = await fetchPageTitle(item.url);
-    if (pageTitle) {
+    // 2. Fetch actual page title and date
+    const { title: pageTitle, date: pageDate } = await fetchPageTitleAndDate(item.url);
+    const updatedItem = { ...item };
+    if (needsTitleEnrich && pageTitle) {
       console.log(`[News Title] Enriched from page: "${item.title}" → "${pageTitle}"`);
-      return { ...item, title: pageTitle };
+      updatedItem.title = pageTitle;
     }
-
-    return item;
+    if (pageDate && pageDate !== item.date) {
+      console.log(`[News Date] Corrected: "${item.date}" → "${pageDate}" for "${updatedItem.title}"`);
+      updatedItem.date = pageDate;
+    }
+    return updatedItem;
   }));
 }
 
@@ -775,8 +822,13 @@ export class ResearchService {
                         console.log(`[News] Soft 404 detected: ${item.url}`);
                         return { ...item, url: '' };
                       }
+                      // Extract real date from the fetched page
+                      const extractedDate = extractDateFromHtml(text);
+                      if (extractedDate && extractedDate !== item.date) {
+                        console.log(`[News] Date corrected: "${item.date}" → "${extractedDate}" for ${item.url}`);
+                      }
                       console.log(`[News] Gemini URL valid: ${item.url}`);
-                      return item;
+                      return { ...item, date: extractedDate || item.date };
                     }
                     console.log(`[News] Gemini URL invalid (${response.status}): ${item.url}`);
                     return { ...item, url: '' };
